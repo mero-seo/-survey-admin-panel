@@ -28,6 +28,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import { StatCard } from "@/components/ui/StatCard";
 
 interface SurveyStats {
   total: number;
@@ -151,33 +152,6 @@ type Breakdown = { date: string; total: number; excellent: number; satisfactory:
 type LocationBreakdown = { location: string; total: number; excellent: number; satisfactory: number; average: number };
 
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// Animation Variants for Framer Motion
-const cardVariants = {
-  rest: { y: 0 },
-  hover: { 
-    y: -8,
-    transition: { type: 'spring', stiffness: 300, damping: 20 }
-  },
-} as const;
-
-const shapeVariants = {
-  rest: { x: 0, y: 0, opacity: 0.7 },
-  hover: {
-    x: 5,
-    y: -5,
-    opacity: 1,
-    transition: { type: 'spring', stiffness: 400, damping: 20, duration: 0.4 },
-  },
-} as const;
-
-const textVariants = {
-    rest: { scale: 1 },
-    hover: {
-        scale: 1.05,
-        transition: { type: 'spring', stiffness: 300 }
-    }
-} as const;
 
 export default function SurveyPage() {
   const { data: session, status } = useSession();
@@ -424,38 +398,12 @@ export default function SurveyPage() {
         </span>
       </div>
 
-      {/* Survey Stats Cards */}
+      {/* Survey Stats Cards */}r
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        {[
-          { title: "Total Surveys", value: surveyStats?.total, icon: <BarChart3 className="text-blue-500" size={20} />, colors: "from-blue-50 to-blue-100", textColor: "text-blue-700" },
-          { title: "Excellent", value: surveyStats?.excellent, icon: <Star className="text-green-500" size={20} />, colors: "from-green-50 to-green-100", textColor: "text-green-700" },
-          { title: "Satisfactory", value: surveyStats?.satisfactory, icon: <ThumbsUp className="text-yellow-500" size={20} />, colors: "from-yellow-50 to-yellow-100", textColor: "text-yellow-700" },
-          { title: "Average", value: surveyStats?.average, icon: <ThumbsDown className="text-red-500" size={20} />, colors: "from-red-50 to-red-100", textColor: "text-red-700" },
-        ].map((card, idx) => (
-          <motion.div
-            key={idx}
-            variants={cardVariants}
-            initial="rest"
-            whileHover="hover"
-            animate="rest"
-          >
-            <Card className={`shadow-sm border-0 bg-gradient-to-br ${card.colors} relative overflow-hidden h-full`}>
-              <motion.div variants={shapeVariants} className="absolute -bottom-4 -right-4 w-16 h-16 bg-white/10 rounded-full" />
-              <motion.div variants={shapeVariants} className="absolute top-4 -left-4 w-20 h-20 bg-white/10 rounded-lg rotate-12" />
-              
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  {card.icon} {card.title}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="relative z-10">
-                <motion.div variants={textVariants} className={`text-3xl font-bold ${card.textColor}`}>
-                  {card.value ?? 'N/A'}
-                </motion.div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
+        <StatCard title="Total Surveys" value={surveyStats?.total} icon={<BarChart3 className="text-blue-500" size={20} />} colors="from-blue-50 to-blue-100" textColor="text-blue-700" />
+        <StatCard title="Excellent" value={surveyStats?.excellent} icon={<Star className="text-green-500" size={20} />} colors="from-green-50 to-green-100" textColor="text-green-700" />
+        <StatCard title="Satisfactory" value={surveyStats?.satisfactory} icon={<ThumbsUp className="text-yellow-500" size={20} />} colors="from-yellow-50 to-yellow-100" textColor="text-yellow-700" />
+        <StatCard title="Average" value={surveyStats?.average} icon={<ThumbsDown className="text-red-500" size={20} />} colors="from-red-50 to-red-100" textColor="text-red-700" />
       </div>
       
       <div className={cn("sticky top-0 z-10 bg-white border-b border-muted/30 mb-2", !filtersOpen && "shadow-sm")}
