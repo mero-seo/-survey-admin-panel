@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
@@ -9,7 +9,7 @@ import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin, PowerIco
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { StatCard } from "@/components/StatCard";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
 
 interface Survey {
   id: string;
@@ -144,6 +144,18 @@ export default function DashboardPage() {
     fetchData();
   }, [session, status, router]);
 
+  const surveyColumns = useMemo<ColumnDef<Survey>[]>(() => [
+    { id: 'location', header: 'Location', cell: (s) => s.location },
+    { id: 'answer', header: 'Rating', cell: (s) => s.answer },
+    { id: 'device', header: 'Device', cell: (s) => s.device?.name || 'N/A' },
+  ], []);
+
+  const deviceColumns = useMemo<ColumnDef<Device>[]>(() => [
+    { id: 'name', header: 'Name', cell: (d) => d.name },
+    { id: 'location', header: 'Location', cell: (d) => d.location },
+    { id: 'status', header: 'Status', cell: (d) => d.status },
+  ], []);
+
   const averageRating = calcAverageRating(stats);
 
   if (status === "loading" || loading) {
@@ -200,30 +212,13 @@ export default function DashboardPage() {
             <CardTitle>Recent Surveys</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Device</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentSurveys.length > 0 ? (
-                  recentSurveys.map(survey => (
-                    <TableRow key={survey.id}>
-                      <TableCell>{survey.location}</TableCell>
-                      <TableCell>{survey.answer}</TableCell>
-                      <TableCell>{survey.device?.name || 'N/A'}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center">No recent surveys</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+          <div className="rounded-md border mb-6 px-5">
+            <DynamicTable
+              columns={surveyColumns}
+              data={recentSurveys}
+              emptyStateMessage="No recent surveys"
+            />
+            </div>
           </CardContent>
           <CardFooter>
              <Link href="/admin/surveys" className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end">
@@ -238,30 +233,13 @@ export default function DashboardPage() {
             <CardTitle>Recent Devices</CardTitle>
           </CardHeader>
           <CardContent>
-             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentDevices.length > 0 ? (
-                  recentDevices.map(device => (
-                    <TableRow key={device.id}>
-                      <TableCell>{device.name}</TableCell>
-                      <TableCell>{device.location}</TableCell>
-                      <TableCell>{device.status}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center">No recent devices</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+          <div className="rounded-md border mb-6 px-5">
+             <DynamicTable
+              columns={deviceColumns}
+              data={recentDevices}
+              emptyStateMessage="No recent devices"
+            />
+            </div>
           </CardContent>
            <CardFooter>
              <Link href="/admin/devices" className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end">

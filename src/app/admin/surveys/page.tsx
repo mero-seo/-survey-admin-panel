@@ -6,14 +6,6 @@ import { apiClient } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from "recharts";
 import { useSession } from "next-auth/react";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
@@ -30,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { StatCard } from "@/components/StatCard";
 import { PaginationControls } from "@/components/PaginationControls";
+import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
 
 interface SurveyStats {
   total: number;
@@ -56,6 +49,8 @@ interface PaginationMeta {
   hasNext: boolean;
   hasPrev: boolean;
 }
+
+type SortOrder = "asc" | "desc";
 
 const timeShifts = [
   { label: 'Morning (5:00AM–11:59AM)', value: 'morning', start: '05:00', end: '11:59' },
@@ -98,7 +93,7 @@ export default function SurveyPage() {
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "10");
   const sortBy = searchParams.get("sortBy") || "createdAt";
-  const sortOrder = searchParams.get("sortOrder") || "desc";
+  const sortOrder = (searchParams.get("sortOrder") as SortOrder) || "desc";
   const locationFilter = searchParams.get("location") || "";
   const answerFilter = searchParams.get("answer") || "";
   const timeShift = searchParams.get("timeShift") || "";
@@ -128,6 +123,8 @@ export default function SurveyPage() {
   const [surveyStats, setSurveyStats] = useState<SurveyStats | null>(null);
   const pieColors = ["#22c55e", "#eab308", "#ef4444"];
 
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
   const updateSearchParams = useCallback((paramsToUpdate: Record<string, string | number | null | Date>) => {
     const newParams = new URLSearchParams(searchParams.toString());
     Object.entries(paramsToUpdate).forEach(([key, value]) => {
@@ -147,6 +144,7 @@ export default function SurveyPage() {
     if (sessionStatus !== "authenticated" || !session?.user?.accessToken) return;
 
     const fetchData = async () => {
+      setIsDataLoading(true);
       try {
         const params: Record<string, string | number> = {
           page,
@@ -223,6 +221,8 @@ export default function SurveyPage() {
         setLocationBreakdown([]);
         setResponseDistribution({excellent: 0, satisfactory: 0, average: 0});
         setSurveyStats(null);
+      } finally {
+        setIsDataLoading(false);
       }
     };
     fetchData();
@@ -314,6 +314,52 @@ export default function SurveyPage() {
       page: 1,
     });
   };
+
+  const columns: ColumnDef<Survey>[] = [
+    { id: "id", header: "ID", cell: (survey) => survey.id.slice(-6), enableSorting: true },
+    {
+      id: "timestamp",
+      header: "Date",
+      cell: (survey) => (survey.timestamp ? survey.timestamp.slice(0, 10) : ""),
+      enableSorting: true,
+    },
+    { id: "location", header: "Location", cell: (survey) => survey.location, enableSorting: true },
+    {
+      id: "deviceId",
+      header: "Device",
+      cell: (survey) => survey.device?.name || survey.deviceId,
+      enableSorting: true,
+    },
+    {
+      id: "timestamp_time",
+      header: "Time",
+      cell: (survey) =>
+        survey.timestamp
+          ? new Date(survey.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : survey.createdAt
+          ? new Date(survey.createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "",
+    },
+    {
+      id: "answer",
+      header: "Rating",
+      cell: (survey) =>
+        survey.answer ? survey.answer.charAt(0) + survey.answer.slice(1).toLowerCase() : "",
+      enableSorting: true,
+    },
+    {
+      id: "syncStatus",
+      header: "Synced",
+      cell: (survey) => (survey.syncStatus === "SYNCED" ? "Yes" : "No"),
+      enableSorting: true,
+    },
+  ];
 
   return (
     <div className="p-4 md:p-8">
@@ -465,33 +511,16 @@ export default function SurveyPage() {
           </div>
         </div>
       )}
-      <div className="overflow-x-auto mb-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("id")}>ID {sortBy === "id" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("timestamp")}>Date {sortBy === "timestamp" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("location")}>Location {sortBy === "location" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("deviceId")}>Device {sortBy === "deviceId" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("timestamp")}>Time {sortBy === "timestamp" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("answer")}>Rating {sortBy === "answer" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("syncStatus")}>Synced {sortBy === "syncStatus" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {surveys.map((survey) => (
-              <TableRow key={survey.id}>
-                <TableCell>{survey.id}</TableCell>
-                <TableCell>{survey.timestamp ? survey.timestamp.slice(0, 10) : ''}</TableCell>
-                <TableCell>{survey.location}</TableCell>
-                <TableCell>{survey.device?.name || survey.deviceId}</TableCell>
-                <TableCell>{survey.timestamp ? new Date(survey.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (survey.createdAt ? new Date(survey.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')}</TableCell>
-                <TableCell>{survey.answer ? survey.answer.charAt(0) + survey.answer.slice(1).toLowerCase() : ''}</TableCell>
-                <TableCell>{survey.syncStatus === 'SYNCED' ? 'Yes' : 'No'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="rounded-md border mb-6 px-5">
+        <DynamicTable
+            columns={columns}
+            data={surveys}
+            isLoading={isDataLoading}
+            onSort={handleSort}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            emptyStateMessage="No surveys found for the selected filters."
+        />
       </div>
       <PaginationControls
           page={page}

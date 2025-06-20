@@ -1,17 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { useSession } from "next-auth/react";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -31,6 +23,7 @@ import {
 import toast from "react-hot-toast";
 import { StatCard } from "@/components/StatCard";
 import { PaginationControls } from "@/components/PaginationControls";
+import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
 
 interface DeviceConfiguration {
   surveyInterval: number;
@@ -96,6 +89,16 @@ export default function DevicePage() {
   const [editedDevice, setEditedDevice] = useState<Partial<Device>>({});
   const [editedConfig, setEditedConfig] = useState<Partial<DeviceConfiguration>>({});
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const getStatusBadgeClass = useCallback((statusValue: Device["status"]) => {
+    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
+    switch (statusValue) {
+      case "ACTIVE": return `${baseClasses} bg-green-100 text-green-800`;
+      case "INACTIVE": return `${baseClasses} bg-red-100 text-red-800`;
+      case "MAINTENANCE": return `${baseClasses} bg-yellow-100 text-yellow-800`;
+      default: return `${baseClasses} bg-gray-100 text-gray-800`;
+    }
+  }, []);
 
   const updateSearchParams = useCallback((paramsToUpdate: Record<string, string | number | null>) => {
     const newParams = new URLSearchParams(searchParams.toString());
@@ -170,7 +173,7 @@ export default function DevicePage() {
 
   const handleUpdateDevice = async () => {
     if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
-    setIsUpdating(true);
+    setIsUpdating(true); 
     try {
       await apiClient.put(`/devices/${selectedDevice.id}`, editedDevice, {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
@@ -250,15 +253,45 @@ export default function DevicePage() {
     setEditedConfig({});
   }, []);
 
-  const getStatusBadgeClass = (statusValue: Device["status"]) => {
-    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
-    switch (statusValue) {
-      case "ACTIVE": return `${baseClasses} bg-green-100 text-green-800`;
-      case "INACTIVE": return `${baseClasses} bg-red-100 text-red-800`;
-      case "MAINTENANCE": return `${baseClasses} bg-yellow-100 text-yellow-800`;
-      default: return `${baseClasses} bg-gray-100 text-gray-800`;
-    }
-  };
+  const columns = useMemo<ColumnDef<Device>[]>(
+    () => [
+      { id: "name", header: "Name", cell: (device) => device.name, enableSorting: true },
+      { id: "location", header: "Location", cell: (device) => device.location, enableSorting: true },
+      {
+        id: "status",
+        header: "Status",
+        cell: (device) => (
+          <span className={getStatusBadgeClass(device.status)}>{device.status}</span>
+        ),
+        enableSorting: true,
+      },
+      {
+        id: "lastSeen",
+        header: "Last Seen",
+        cell: (device) => (device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "N/A"),
+        enableSorting: true,
+      },
+      { id: "surveys", header: "Surveys", cell: (device) => device._count?.surveys ?? 0 },
+      {
+        id: "actions",
+        header: "Actions",
+        cell: (device) => (
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={() => openModal(device)} disabled={isUpdating}>
+              <PencilIcon className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => openConfigModal(device)} disabled={isUpdating}>
+              <SettingsIcon className="h-4 w-4" />
+            </Button>
+            <Button variant="destructive" size="icon" onClick={() => openDeleteModal(device)} disabled={isUpdating}>
+              <Trash2Icon className="h-4 w-4" />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [isUpdating, openModal, openConfigModal, openDeleteModal, getStatusBadgeClass]
+  );
 
   if (sessionStatus === "loading") {
     return <div className="p-4 md:p-8">Loading...</div>;
@@ -308,67 +341,16 @@ export default function DevicePage() {
       </div>
 
       {/* Devices Table */}
-      <div className="overflow-x-auto mb-6">
-        {isDataLoading ? (
-          <div className="text-center py-8">Loading devices...</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
-                  Name {sortBy === "name" && (sortOrder === "asc" ? "↑" : "↓")}
-                </TableHead>
-                <TableHead className="cursor-pointer" onClick={() => handleSort("location")}>
-                  Location {sortBy === "location" && (sortOrder === "asc" ? "↑" : "↓")}
-                </TableHead>
-                <TableHead className="cursor-pointer" onClick={() => handleSort("status")}>
-                  Status {sortBy === "status" && (sortOrder === "asc" ? "↑" : "↓")}
-                </TableHead>
-                <TableHead className="cursor-pointer" onClick={() => handleSort("lastSeen")}>
-                  Last Seen {sortBy === "lastSeen" && (sortOrder === "asc" ? "↑" : "↓")}
-                </TableHead>
-                <TableHead>Surveys</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {devices.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    No devices found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                devices.map((device) => (
-                  <TableRow key={device.id}>
-                    <TableCell>{device.name}</TableCell>
-                    <TableCell>{device.location}</TableCell>
-                    <TableCell>
-                      <span className={getStatusBadgeClass(device.status)}>
-                        {device.status}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "N/A"}
-                    </TableCell>
-                    <TableCell>{device._count?.surveys ?? 0}</TableCell>
-                    <TableCell className="flex gap-2">
-                      <Button variant="outline" size="icon" onClick={() => openModal(device)} disabled={isUpdating}>
-                        <PencilIcon className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => openConfigModal(device)} disabled={isUpdating}>
-                        <SettingsIcon className="h-4 w-4" />
-                      </Button>
-                      <Button variant="destructive" size="icon" onClick={() => openDeleteModal(device)} disabled={isUpdating}>
-                        <Trash2Icon className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        )}
+      <div className="rounded-md border mb-6 px-5">
+        <DynamicTable
+            columns={columns}
+            data={devices}
+            isLoading={isDataLoading}
+            onSort={handleSort}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            emptyStateMessage="No devices found"
+        />
       </div>
 
       {/* Pagination */}
