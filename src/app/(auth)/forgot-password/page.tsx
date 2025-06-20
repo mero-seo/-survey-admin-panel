@@ -71,7 +71,7 @@ export default function ForgotPasswordPage() {
                 If you don&apos;t see the email, please check your spam folder.
               </p>
               <Button asChild>
-                <Link href="/auth/login">Back to Login</Link>
+                <Link href="/login">Back to Login</Link>
               </Button>
             </div>
           ) : (

@@ -17,6 +17,8 @@ function LoginPage() {
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     if (status === "loading") return;
@@ -33,23 +35,15 @@ function LoginPage() {
     setIsLoading(true);
     
     try {
-      const formData = new FormData(e.target as HTMLFormElement);
-      const email = formData.get("email") as string;
-      const password = formData.get("password") as string;
-
       const result = await signIn("credentials", {
         email,
         password,
         redirect: false,
       });
       console.log(result);
-      if (result?.ok) {
-        toast.success("Login successful!");
-        router.push("/admin/dashboard");
-      } else {
-        toast.error(result?.error || "Invalid credentials");
-      }
+      router.push("/admin/dashboard");
     } catch (error: unknown) {
+      console.log(error);
       console.error("Login error:", error);
       toast.error("An unexpected error occurred");
     } finally {
@@ -83,6 +77,8 @@ function LoginPage() {
                 placeholder="admin@example.com"
                 required
                 className="h-10"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
               />
             </div>
             
@@ -104,6 +100,8 @@ function LoginPage() {
                   placeholder="••••••••"
                   required
                   className="h-10 pr-10"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
                 />
                 <button
                   type="button"
