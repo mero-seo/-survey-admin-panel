@@ -4,15 +4,16 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
 export default function LoginPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,18 +21,23 @@ export default function LoginPage() {
     
     try {
       const formData = new FormData(e.target as HTMLFormElement);
+      const email = formData.get("email") as string;
+      const password = formData.get("password") as string;
+
       const result = await signIn("credentials", {
-        email: formData.get("email"),
-        password: formData.get("password"),
+        email,
+        password,
         redirect: false,
       });
-
+      console.log(result);
       if (result?.ok) {
+        toast.success("Login successful!");
         router.push("/admin/dashboard");
       } else {
         toast.error(result?.error || "Invalid credentials");
       }
-    } catch {
+    } catch (error: unknown) {
+      console.error("Login error:", error);
       toast.error("An unexpected error occurred");
     } finally {
       setIsLoading(false);
@@ -71,20 +77,30 @@ export default function LoginPage() {
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
                 <Link
-                  href="/auth/reset-password"
+                  href="/forgot-password"
                   className="text-sm font-medium text-primary hover:underline"
                 >
                   Forgot password?
                 </Link>
               </div>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                required
-                className="h-10"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  required
+                  className="h-10 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
             
             <Button type="submit" className="w-full" disabled={isLoading}>
@@ -100,7 +116,7 @@ export default function LoginPage() {
           </form>
         </CardContent>
         
-        <CardFooter className="flex flex-col items-center space-y-3">
+        {/* <CardFooter className="flex flex-col items-center space-y-3">
           <div className="relative w-full">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -128,7 +144,7 @@ export default function LoginPage() {
               )}
             </Button>
           </div>
-        </CardFooter>
+        </CardFooter> */}
       </Card>
       
       <p className="mt-4 px-8 text-center text-sm text-muted-foreground">
