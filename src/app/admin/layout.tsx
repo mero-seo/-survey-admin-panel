@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
 import { redirect } from "next/navigation";
+import Sidebar from "@/components/Sidebar";
 
 const allowedRoles = ["ADMIN", "SUPER_ADMIN"];
 
@@ -29,5 +30,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   // If the role is allowed, render the admin pages
-  return <>{children}</>;
+  return (
+    <div className="flex h-screen">
+      <Sidebar />
+      <main className="flex-1 overflow-auto bg-background">
+        {children}
+      </main>
+    </div>
+  );
 } 
