@@ -23,6 +23,10 @@ import {
 import { StatCard } from "@/components/StatCard";
 import { PaginationControls } from "@/components/PaginationControls";
 import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
+import { StatCardSkeleton } from "@/components/StatCardSkeleton";
+import { TableSkeleton } from "@/components/TableSkeleton";
+import { ChartSkeleton } from "@/components/ChartSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface SurveyStats {
   total: number;
@@ -360,6 +364,42 @@ export default function SurveyPage() {
       enableSorting: true,
     },
   ];
+
+  if (isDataLoading) {
+      return (
+          <div className="p-4 md:p-8">
+              <div className="flex items-center gap-2 mb-2">
+                  <Skeleton className="h-7 w-64" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+                  {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+              </div>
+              
+              {/* Filter Skeleton */}
+              <div className="border-b border-muted/30 mb-2">
+                  <div className="flex items-center justify-between px-2 py-2">
+                      <Skeleton className="h-6 w-20" />
+                      <Skeleton className="h-8 w-8" />
+                  </div>
+                  <div className="flex flex-col md:flex-row md:items-end gap-4 px-2 pb-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                  </div>
+              </div>
+              
+              <div className="rounded-md border mb-6">
+                  <TableSkeleton columns={7} rows={10} />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                  <ChartSkeleton />
+                  <ChartSkeleton />
+                  <ChartSkeleton />
+              </div>
+          </div>
+      )
+  }
 
   return (
     <div className="p-4 md:p-8">

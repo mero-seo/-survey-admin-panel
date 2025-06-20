@@ -10,6 +10,10 @@ import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { StatCard } from "@/components/StatCard";
 import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
+import { StatCardSkeleton } from "@/components/StatCardSkeleton";
+import { TableSkeleton } from "@/components/TableSkeleton";
+import { ChartSkeleton } from "@/components/ChartSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Survey {
   id: string;
@@ -158,9 +162,36 @@ export default function DashboardPage() {
 
   const averageRating = calcAverageRating(stats);
 
-  if (status === "loading" || loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading dashboard...</div>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const locationBreakdownData = stats?.byLocation.map(({ percentages, ...rest }) => rest) || [];
+
+  if (loading) {
+    return (
+        <div className="p-4 md:p-8">
+            <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <Skeleton className="h-8 w-48" />
+                <Skeleton className="h-6 w-64" />
+            </div>
+            {/* Skeletons for Stat Cards */}
+            <div className="grid gap-4 md:grid-cols-5 mb-8">
+                {Array.from({ length: 5 }).map((_, i) => <StatCardSkeleton key={i} />)}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+                {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+            </div>
+            {/* Skeletons for Tables and Charts */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 mb-8">
+                <Card><CardContent className="p-2"><TableSkeleton columns={3} noHeader /></CardContent></Card>
+                <Card><CardContent className="p-2"><TableSkeleton columns={3} noHeader /></CardContent></Card>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+                <ChartSkeleton />
+                <ChartSkeleton />
+            </div>
+        </div>
+    )
   }
+
   if (error) {
     return <div className="p-8 text-center text-red-500">{error}</div>;
   }
