@@ -1,7 +1,7 @@
 'use client';
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -9,11 +9,24 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import toast from "react-hot-toast";
+import { useSession } from "next-auth/react";
+import SessionProviderWrapper from "@/components/SessionProviderWrapper";
 
-export default function LoginPage() {
+function LoginPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (session) {
+      router.replace("/admin/dashboard");
+    }
+  }, [session, status, router]);
+
+  if (status === "loading") return null;
+  if (session) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,5 +178,13 @@ export default function LoginPage() {
         .
       </p>
     </div>
+  );
+}
+
+export default function LoginPageWithProvider() {
+  return (
+    <SessionProviderWrapper>
+      <LoginPage />
+    </SessionProviderWrapper>
   );
 }
