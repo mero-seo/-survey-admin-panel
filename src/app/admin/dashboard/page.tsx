@@ -5,9 +5,37 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin } from "lucide-react";
+import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin, PowerIcon, PowerOffIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { motion } from "framer-motion";
+
+// Animation Variants for Framer Motion
+const cardVariants = {
+  rest: { y: 0 },
+  hover: { 
+    y: -8,
+    transition: { type: 'spring', stiffness: 300, damping: 20 }
+  },
+} as const;
+
+const shapeVariants = {
+  rest: { x: 0, y: 0, opacity: 0.7 },
+  hover: {
+    x: 5,
+    y: -5,
+    opacity: 1,
+    transition: { type: 'spring', stiffness: 400, damping: 20, duration: 0.4 },
+  },
+} as const;
+
+const textVariants = {
+    rest: { scale: 1 },
+    hover: {
+        scale: 1.05,
+        transition: { type: 'spring', stiffness: 300 }
+    }
+} as const;
 
 interface SurveyStats {
   total: number;
@@ -223,122 +251,77 @@ export default function DashboardPage() {
         </span>
       </div>
       <div className="grid gap-4 md:grid-cols-5 mb-8">
-        <Card className="shadow-sm border-0 bg-gradient-to-br from-blue-50 to-blue-100">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <BarChart3 className="text-blue-500" size={20} /> Total Surveys
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-blue-700">{stats?.total ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm border-0 bg-gradient-to-br from-green-50 to-green-100">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Star className="text-green-500" size={20} /> Excellent
-            </CardTitle>
-            <span className="text-green-700 font-bold">{stats?.percentages?.excellent ?? 0}%</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-700">{stats?.excellent ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm border-0 bg-gradient-to-br from-yellow-50 to-yellow-100">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ThumbsUp className="text-yellow-500" size={20} /> Satisfactory
-            </CardTitle>
-            <span className="text-yellow-700 font-bold">{stats?.percentages?.satisfactory ?? 0}%</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-700">{stats?.satisfactory ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm border-0 bg-gradient-to-br from-red-50 to-red-100">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ThumbsDown className="text-red-500" size={20} /> Average
-            </CardTitle>
-            <span className="text-red-700 font-bold">{stats?.percentages?.average ?? 0}%</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-700">{stats?.average ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm border-0 bg-gradient-to-br from-purple-50 to-purple-100">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Star className="text-purple-500" size={20} /> Average Rating
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-700">
-              {averageRating ? averageRating.toFixed(2) : 'N/A'}
-            </div>
-          </CardContent>
-        </Card>
+        {[
+          { title: "Total Surveys", value: stats?.total, icon: <BarChart3 className="text-blue-500" size={20} />, colors: "from-blue-50 to-blue-100", textColor: "text-blue-700", mainValueClass: "text-3xl" },
+          { title: "Excellent", value: stats?.excellent, percentage: stats?.percentages?.excellent, icon: <Star className="text-green-500" size={20} />, colors: "from-green-50 to-green-100", textColor: "text-green-700" },
+          { title: "Satisfactory", value: stats?.satisfactory, percentage: stats?.percentages?.satisfactory, icon: <ThumbsUp className="text-yellow-500" size={20} />, colors: "from-yellow-50 to-yellow-100", textColor: "text-yellow-700" },
+          { title: "Average", value: stats?.average, percentage: stats?.percentages?.average, icon: <ThumbsDown className="text-red-500" size={20} />, colors: "from-red-50 to-red-100", textColor: "text-red-700" },
+          { title: "Avg. Rating", value: averageRating?.toFixed(2), icon: <Star className="text-indigo-500" size={20} />, colors: "from-indigo-50 to-indigo-100", textColor: "text-indigo-700", mainValueClass: "text-3xl" },
+        ].map((card, idx) => (
+            <motion.div
+              key={idx}
+              variants={cardVariants}
+              initial="rest"
+              whileHover="hover"
+              animate="rest"
+            >
+              <Card className={`shadow-sm border-0 bg-gradient-to-br ${card.colors} relative overflow-hidden h-full`}>
+                <motion.div variants={shapeVariants} className="absolute -bottom-4 -right-4 w-16 h-16 bg-white/10 rounded-full" />
+                <motion.div variants={shapeVariants} className="absolute top-4 -left-4 w-20 h-20 bg-white/10 rounded-lg rotate-12" />
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    {card.icon} {card.title}
+                  </CardTitle>
+                  {card.percentage !== undefined && <span className={`${card.textColor} font-bold`}>{card.percentage}%</span>}
+                </CardHeader>
+                <CardContent className="relative z-10">
+                  <motion.div variants={textVariants} className={`font-bold ${card.textColor} ${card.mainValueClass || 'text-2xl'}`}>
+                    {card.value ?? 0}
+                  </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
+        ))}
       </div>
 
       {/* Device Stats Section */}
       <div className="flex items-center gap-2 mb-2">
         <h2 className="text-xl font-bold">Device Stats</h2>
-        <span className={`px-2 py-1 rounded text-xs font-semibold ${isDeviceDummy ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+        <span className={`px-2 py-1 rounded text-xs font-semibold ${isDeviceDummy ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
           {isDeviceDummy ? "Dummy Data" : "Live from API"}
         </span>
       </div>
-      {deviceStats && (
-        <div className="grid gap-4 md:grid-cols-6 mb-8">
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-gray-50 to-gray-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Devices (Total)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-700">{deviceStats.total}</div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-green-50 to-green-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Active</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-700">{deviceStats.active}</div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-red-50 to-red-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Inactive</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-700">{deviceStats.inactive}</div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-yellow-50 to-yellow-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Maintenance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-700">{deviceStats.maintenance}</div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-blue-50 to-blue-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Online</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-700">{deviceStats.online}</div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-0 bg-gradient-to-br from-gray-100 to-gray-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">Offline</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-500">{deviceStats.offline}</div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        {[
+            { title: "Total Devices", value: deviceStats?.total, icon: <PowerIcon className="text-gray-500" size={20} />, colors: "from-gray-50 to-gray-100", textColor: "text-gray-700" },
+            { title: "Active", value: deviceStats?.active, icon: <PowerIcon className="text-green-500" size={20} />, colors: "from-green-50 to-green-100", textColor: "text-green-700" },
+            { title: "Inactive", value: deviceStats?.inactive, icon: <PowerOffIcon className="text-red-500" size={20} />, colors: "from-red-50 to-red-100", textColor: "text-red-700" },
+            { title: "Maintenance", value: deviceStats?.maintenance, icon: <SettingsIcon className="text-yellow-500" size={20} />, colors: "from-yellow-50 to-yellow-100", textColor: "text-yellow-700" },
+        ].map((card, idx) => (
+            <motion.div
+              key={idx}
+              variants={cardVariants}
+              initial="rest"
+              whileHover="hover"
+              animate="rest"
+            >
+              <Card className={`shadow-sm border-0 bg-gradient-to-br ${card.colors} relative overflow-hidden h-full`}>
+                 <motion.div variants={shapeVariants} className="absolute -bottom-4 -right-4 w-16 h-16 bg-white/10 rounded-full" />
+                <motion.div variants={shapeVariants} className="absolute top-4 -left-4 w-20 h-20 bg-white/10 rounded-lg rotate-12" />
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    {card.icon} {card.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="relative z-10">
+                  <motion.div variants={textVariants} className={`text-2xl font-bold ${card.textColor}`}>
+                    {card.value ?? 0}
+                  </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
+        ))}
+      </div>
 
       {/* Trends Over Time */}
       <div className="grid gap-4 md:grid-cols-2">

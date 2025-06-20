@@ -29,6 +29,34 @@ import {
   PowerOffIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { motion } from "framer-motion";
+
+// Animation Variants for Framer Motion
+const cardVariants = {
+  rest: { y: 0 },
+  hover: { 
+    y: -8,
+    transition: { type: 'spring', stiffness: 300, damping: 20 }
+  },
+} as const;
+
+const shapeVariants = {
+  rest: { x: 0, y: 0, opacity: 0.7 },
+  hover: {
+    x: 5,
+    y: -5,
+    opacity: 1,
+    transition: { type: 'spring', stiffness: 400, damping: 20, duration: 0.4 },
+  },
+} as const;
+
+const textVariants = {
+    rest: { scale: 1 },
+    hover: {
+        scale: 1.05,
+        transition: { type: 'spring', stiffness: 300 }
+    }
+} as const;
 
 interface DeviceConfiguration {
   surveyInterval: number;
@@ -271,26 +299,10 @@ export default function DevicePage() {
 
   const statCards = useMemo(
     () => [
-      { 
-        title: "Total Devices", 
-        value: stats.total, 
-        icon: <PowerIcon className="h-4 w-4" /> 
-      },
-      { 
-        title: "Active", 
-        value: stats.active, 
-        icon: <PowerIcon className="h-4 w-4 text-green-500" /> 
-      },
-      { 
-        title: "Inactive", 
-        value: stats.inactive, 
-        icon: <PowerOffIcon className="h-4 w-4 text-red-500" /> 
-      },
-      { 
-        title: "Maintenance", 
-        value: stats.maintenance, 
-        icon: <SettingsIcon className="h-4 w-4 text-yellow-500" /> 
-      },
+      { title: "Total Devices", value: stats.total, icon: <PowerIcon className="text-gray-500" />, colors: "from-gray-50 to-gray-100", textColor: "text-gray-700" },
+      { title: "Active", value: stats.active, icon: <PowerIcon className="text-green-500" />, colors: "from-green-50 to-green-100", textColor: "text-green-700" },
+      { title: "Inactive", value: stats.inactive, icon: <PowerOffIcon className="text-red-500" />, colors: "from-red-50 to-red-100", textColor: "text-red-700" },
+      { title: "Maintenance", value: stats.maintenance, icon: <SettingsIcon className="text-yellow-500" />, colors: "from-yellow-50 to-yellow-100", textColor: "text-yellow-700" },
     ],
     [stats]
   );
@@ -324,15 +336,28 @@ export default function DevicePage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         {statCards.map((card, idx) => (
-          <Card key={idx}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
-              {card.icon}
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{card.value}</div>
-            </CardContent>
-          </Card>
+          <motion.div
+            key={idx}
+            variants={cardVariants}
+            initial="rest"
+            whileHover="hover"
+            animate="rest"
+          >
+            <Card className={`shadow-sm border-0 bg-gradient-to-br ${card.colors} relative overflow-hidden h-full`}>
+                <motion.div variants={shapeVariants} className="absolute -bottom-4 -right-4 w-16 h-16 bg-white/10 rounded-full" />
+                <motion.div variants={shapeVariants} className="absolute top-4 -left-4 w-20 h-20 bg-white/10 rounded-lg rotate-12" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  {card.icon} {card.title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <motion.div variants={textVariants} className={`text-2xl font-bold ${card.textColor}`}>
+                  {card.value}
+                </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
         ))}
       </div>
 
