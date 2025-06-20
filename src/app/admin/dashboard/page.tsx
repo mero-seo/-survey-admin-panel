@@ -4,11 +4,27 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin, PowerIcon, PowerOffIcon, SettingsIcon } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin, PowerIcon, PowerOffIcon, SettingsIcon, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { StatCard } from "@/components/StatCard";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+interface Survey {
+  id: string;
+  location: string;
+  answer: string;
+  timestamp: string;
+  device?: { name: string; };
+}
+
+interface Device {
+  id: string;
+  name: string;
+  location: string;
+  status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
+}
 
 interface SurveyStats {
   total: number;
@@ -64,6 +80,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [stats, setStats] = useState<SurveyStats | null>(null);
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
+  const [recentSurveys, setRecentSurveys] = useState<Survey[]>([]);
+  const [recentDevices, setRecentDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSurveyDummy, setIsSurveyDummy] = useState(false);
@@ -75,126 +93,56 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    const fetchStats = async () => {
+
+    const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiClient.get(`${process.env.NEXT_PUBLIC_API_URL}/surveys/stats`, {
-          headers: {
-            Authorization: `Bearer ${session.user.accessToken}`,
-          },
-        });
-        setStats(response.data.data);
+        const headers = { Authorization: `Bearer ${session.user.accessToken}` };
+        const [statsRes, deviceStatsRes, surveysRes, devicesRes] = await Promise.all([
+          apiClient.get('/surveys/stats', { headers }),
+          apiClient.get('/devices/stats', { headers }),
+          apiClient.get('/surveys?limit=5&sortBy=createdAt&sortOrder=desc', { headers }),
+          apiClient.get('/devices?limit=5&sortBy=createdAt&sortOrder=desc', { headers }),
+        ]);
+
+        setStats(statsRes.data.data);
+        setDeviceStats(deviceStatsRes.data.data);
+        setRecentSurveys(surveysRes.data.data);
+        setRecentDevices(devicesRes.data.data);
+        
         setIsSurveyDummy(false);
-      } catch {
-        // Use dummy data for now if API fails
-        setStats({
-          total: 16,
-          excellent: 10,
-          satisfactory: 5,
-          average: 1,
-          percentages: { excellent: 63, satisfactory: 31, average: 6 },
-          byLocation: [
-            {
-              location: "Aditya desk",
-              total: 4,
-              excellent: 2,
-              satisfactory: 2,
-              average: 0,
-              percentages: { excellent: 50, satisfactory: 50, average: 0 },
-            },
-            {
-              location: "Front",
-              total: 6,
-              excellent: 3,
-              satisfactory: 2,
-              average: 1,
-              percentages: { excellent: 50, satisfactory: 33, average: 17 },
-            },
-            {
-              location: "Iku",
-              total: 6,
-              excellent: 5,
-              satisfactory: 1,
-              average: 0,
-              percentages: { excellent: 83, satisfactory: 17, average: 0 },
-            },
-          ],
-          byDate: [
-            { date: "2025-06-20", total: 16, excellent: 0, satisfactory: 0, average: 0 },
-          ],
-        });
+        setIsDeviceDummy(false);
+
+      } catch (err) {
+        const error = err as Error;
+        setError(`Failed to fetch dashboard data. Displaying dummy data. ${error.message}`);
+        console.error(err);
+
+        // Dummy data for fallback
         setIsSurveyDummy(true);
+        setIsDeviceDummy(true);
+        setStats({
+          total: 16, excellent: 10, satisfactory: 5, average: 1,
+          percentages: { excellent: 63, satisfactory: 31, average: 6 },
+          byLocation: [], byDate: [],
+        });
+        setDeviceStats({ total: 10, active: 7, inactive: 1, maintenance: 1, online: 6, offline: 4 });
+        setRecentSurveys([
+          { id: '1', location: 'Lobby', answer: 'Excellent', timestamp: new Date().toISOString(), device: { name: 'Tablet 1' } },
+          { id: '2', location: 'Front Desk', answer: 'Satisfactory', timestamp: new Date().toISOString(), device: { name: 'Tablet 2' } },
+        ]);
+        setRecentDevices([
+          { id: '1', name: 'Lobby Tablet', location: 'Lobby', status: 'ACTIVE' },
+          { id: '2', name: 'Front Desk Kiosk', location: 'Front Desk', status: 'INACTIVE' },
+        ]);
       } finally {
         setLoading(false);
       }
     };
-    fetchStats();
-  }, [session, status, router]);
 
-  useEffect(() => {
-    if (status === "loading") return;
-    if (!session || !session.user) return;
-    const fetchDeviceStats = async () => {
-      try {
-        const response = await apiClient.get(`${process.env.NEXT_PUBLIC_API_URL}/devices/stats`, {
-          headers: {
-            Authorization: `Bearer ${session.user.accessToken}`,
-          },
-        });
-        setDeviceStats(response.data.data);
-        console.log(response.data.data);
-        setIsDeviceDummy(false);
-      } catch {        // Use dummy data for now if API fails
-        setStats({
-          total: 16,
-          excellent: 10,
-          satisfactory: 5,
-          average: 1,
-          percentages: { excellent: 63, satisfactory: 31, average: 6 },
-          byLocation: [
-            {
-              location: "Aditya desk",
-              total: 4,
-              excellent: 2,
-              satisfactory: 2,
-              average: 0,
-              percentages: { excellent: 50, satisfactory: 50, average: 0 },
-            },
-            {
-              location: "Front",
-              total: 6,
-              excellent: 3,
-              satisfactory: 2,
-              average: 1,
-              percentages: { excellent: 50, satisfactory: 33, average: 17 },
-            },
-            {
-              location: "Iku",
-              total: 6,
-              excellent: 5,
-              satisfactory: 1,
-              average: 0,
-              percentages: { excellent: 83, satisfactory: 17, average: 0 },
-            },
-          ],
-          byDate: [
-            { date: "2025-06-20", total: 16, excellent: 0, satisfactory: 0, average: 0 },
-          ],
-        });
-        setDeviceStats({
-          total: 10,
-          active: 7,
-          inactive: 1,
-          maintenance: 1,
-          online: 6,
-          offline: 4
-        });
-        setIsDeviceDummy(true);
-      }
-    };
-    fetchDeviceStats();
-  }, [session, status]);
+    fetchData();
+  }, [session, status, router]);
 
   const averageRating = calcAverageRating(stats);
 
@@ -243,6 +191,84 @@ export default function DashboardPage() {
         <StatCard title="Active" value={deviceStats?.active} icon={<PowerIcon className="text-green-500" size={20} />} colors="from-green-50 to-green-100" textColor="text-green-700" />
         <StatCard title="Inactive" value={deviceStats?.inactive} icon={<PowerOffIcon className="text-red-500" size={20} />} colors="from-red-50 to-red-100" textColor="text-red-700" />
         <StatCard title="Maintenance" value={deviceStats?.maintenance} icon={<SettingsIcon className="text-yellow-500" size={20} />} colors="from-yellow-50 to-yellow-100" textColor="text-yellow-700" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 mb-8">
+        {/* Recent Surveys Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Surveys</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Device</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentSurveys.length > 0 ? (
+                  recentSurveys.map(survey => (
+                    <TableRow key={survey.id}>
+                      <TableCell>{survey.location}</TableCell>
+                      <TableCell>{survey.answer}</TableCell>
+                      <TableCell>{survey.device?.name || 'N/A'}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center">No recent surveys</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+          <CardFooter>
+             <Link href="/admin/surveys" className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end">
+              View all <ChevronRight size={16} />
+            </Link>
+          </CardFooter>
+        </Card>
+
+        {/* Recent Devices Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Devices</CardTitle>
+          </CardHeader>
+          <CardContent>
+             <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentDevices.length > 0 ? (
+                  recentDevices.map(device => (
+                    <TableRow key={device.id}>
+                      <TableCell>{device.name}</TableCell>
+                      <TableCell>{device.location}</TableCell>
+                      <TableCell>{device.status}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center">No recent devices</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+           <CardFooter>
+             <Link href="/admin/devices" className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end">
+              View all <ChevronRight size={16} />
+            </Link>
+          </CardFooter>
+        </Card>
       </div>
 
       {/* Trends Over Time */}
