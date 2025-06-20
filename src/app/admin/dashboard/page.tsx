@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Star, ThumbsUp, ThumbsDown, MoreHorizontal, MapPin, PowerIcon, PowerOffIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
-import { StatCard } from "@/components/ui/StatCard";
+import { StatCard } from "@/components/StatCard";
 
 interface SurveyStats {
   total: number;

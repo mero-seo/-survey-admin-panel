@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { useSession } from "next-auth/react";
 import {
@@ -28,7 +29,8 @@ import {
   PowerOffIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { StatCard } from "@/components/ui/StatCard";
+import { StatCard } from "@/components/StatCard";
+import { PaginationControls } from "@/components/PaginationControls";
 
 interface DeviceConfiguration {
   surveyInterval: number;
@@ -57,47 +59,35 @@ interface DeviceStats {
   maintenance: number;
 }
 
-interface Pagination {
-  page: number;
-  limit: number;
+interface PaginationMeta {
   total: number;
   totalPages: number;
   hasNext: boolean;
   hasPrev: boolean;
 }
 
-interface Filters {
-  location: string;
-  status: string;
-}
-
 type SortOrder = "asc" | "desc";
 
 export default function DevicePage() {
-  const { data: session, status } = useSession();
-  
-  // Main data states
+  const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // URL-based state
+  const page = parseInt(searchParams.get("page") || "1");
+  const limit = parseInt(searchParams.get("limit") || "10");
+  const sortBy = searchParams.get("sortBy") || "createdAt";
+  const sortOrder = (searchParams.get("sortOrder") as SortOrder) || "desc";
+  const locationFilter = searchParams.get("location") || "";
+  const statusFilter = searchParams.get("status") || "";
+
+  // Component state
   const [devices, setDevices] = useState<Device[]>([]);
-  const [stats, setStats] = useState<DeviceStats>({
-    total: 0,
-    active: 0,
-    inactive: 0,
-    maintenance: 0,
-  });
-  
-  // Pagination and filtering states
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 1,
-    hasNext: false,
-    hasPrev: false,
-  });
-  const [filters, setFilters] = useState<Filters>({ location: "", status: "" });
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  
+  const [stats, setStats] = useState<DeviceStats>({ total: 0, active: 0, inactive: 0, maintenance: 0 });
+  const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({ total: 0, totalPages: 1, hasNext: false, hasPrev: false });
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -107,88 +97,90 @@ export default function DevicePage() {
   const [editedConfig, setEditedConfig] = useState<Partial<DeviceConfiguration>>({});
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Extract page and limit from pagination state
-  const { page, limit } = pagination;
+  const updateSearchParams = useCallback((paramsToUpdate: Record<string, string | number | null>) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    Object.entries(paramsToUpdate).forEach(([key, value]) => {
+      if (value === null || value === '') {
+        newParams.delete(key);
+      } else {
+        newParams.set(key, String(value));
+      }
+    });
+    router.push(`${pathname}?${newParams.toString()}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const fetchData = useCallback(async () => {
-    if (status !== "authenticated" || !session?.user?.accessToken) return;
-
+    if (sessionStatus !== "authenticated" || !session?.user?.accessToken) return;
+    setIsDataLoading(true);
     try {
-      const params: Record<string, string | number> = {
+      const apiParams: Record<string, string | number> = {
         page,
         limit,
         sortBy,
         sortOrder,
       };
-      if (filters.location) params.location = filters.location;
-      if (filters.status) params.status = filters.status;
+      if (locationFilter) apiParams.location = locationFilter;
+      if (statusFilter) apiParams.status = statusFilter;
 
-      const deviceRes = await apiClient.get("/devices", {
-        params,
-        headers: { Authorization: `Bearer ${session.user.accessToken}` },
-      });
+      const [deviceRes, statsRes] = await Promise.all([
+        apiClient.get("/devices", {
+          params: apiParams,
+          headers: { Authorization: `Bearer ${session.user.accessToken}` },
+        }),
+        apiClient.get("/devices/stats", {
+          headers: { Authorization: `Bearer ${session.user.accessToken}` },
+        })
+      ]);
+      
       setDevices(deviceRes.data.data || []);
-
-      // Only update pagination if the API provides new data for it.
-      // This avoids depending on the old 'pagination' state, which caused the infinite loop.
-      const newPagination = deviceRes.data.meta?.pagination;
-      if (newPagination) {
-        setPagination(newPagination);
-      }
-
-      const statsRes = await apiClient.get("/devices/stats", {
-        headers: { Authorization: `Bearer ${session.user.accessToken}` },
-      });
+      setPaginationMeta(deviceRes.data.meta?.pagination || { total: 0, totalPages: 1, hasNext: false, hasPrev: false });
       setStats(statsRes.data.data);
     } catch (error) {
       console.error("Failed to fetch data:", error);
-      toast.error(`Failed to fetch device data: ${error}`);
+      toast.error(`Failed to fetch device data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsDataLoading(false);
     }
-    // With the change above, 'pagination' is no longer a dependency of this function.
-  }, [session, status, page, limit, filters, sortBy, sortOrder]);
+  }, [sessionStatus, session, page, limit, sortBy, sortOrder, locationFilter, statusFilter]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(column);
-      setSortOrder("asc");
-    }
+    const newSortOrder = sortBy === column && sortOrder === 'asc' ? 'desc' : 'asc';
+    updateSearchParams({ sortBy: column, sortOrder: newSortOrder, page: 1 });
+  };
+  
+  const handlePageChange = (newPage: number) => {
+    updateSearchParams({ page: newPage });
+  };
+  
+  const handleLimitChange = (newLimit: number) => {
+    updateSearchParams({ limit: newLimit, page: 1 });
   };
 
-  const handlePageChange = useCallback((newPage: number) => {
-    setPagination(prev => ({ ...prev, page: newPage }));
-  }, []);
-
-  const handleLimitChange = useCallback((newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  }, []);
-
-  const resetFilters = useCallback(() => {
-    setFilters({ location: "", status: "" });
-  }, []);
+  const handleFilterChange = (key: 'location' | 'status', value: string) => {
+    updateSearchParams({ [key]: value, page: 1 });
+  };
+  
+  const resetFilters = () => {
+    updateSearchParams({ location: null, status: null, page: 1 });
+  };
 
   const handleUpdateDevice = async () => {
     if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
-    
     setIsUpdating(true);
     try {
       await apiClient.put(`/devices/${selectedDevice.id}`, editedDevice, {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
       });
       toast.success("Device updated successfully.");
-      setIsModalOpen(false);
-      setSelectedDevice(null);
-      setEditedDevice({});
+      closeAllModals();
       await fetchData();
     } catch (error) {
       console.error("Failed to update device:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      toast.error(`Failed to update device: ${errorMessage}`);
+      toast.error(`Failed to update device: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsUpdating(false);
     }
@@ -196,7 +188,6 @@ export default function DevicePage() {
 
   const handleUpdateConfig = async () => {
     if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
-    
     setIsUpdating(true);
     try {
       await apiClient.put(
@@ -205,14 +196,11 @@ export default function DevicePage() {
         { headers: { Authorization: `Bearer ${session.user.accessToken}` } }
       );
       toast.success("Device configuration updated.");
-      setIsConfigModalOpen(false);
-      setSelectedDevice(null);
-      setEditedConfig({});
+      closeAllModals();
       await fetchData();
     } catch (error) {
       console.error("Failed to update configuration:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      toast.error(`Failed to update configuration: ${errorMessage}`);
+      toast.error(`Failed to update configuration: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsUpdating(false);
     }
@@ -220,20 +208,17 @@ export default function DevicePage() {
   
   const handleDeleteDevice = async () => {
     if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
-    
     setIsUpdating(true);
     try {
       await apiClient.delete(`/devices/${selectedDevice.id}`, {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
       });
       toast.success("Device deleted successfully.");
-      setIsDeleteModalOpen(false);
-      setSelectedDevice(null);
+      closeAllModals();
       await fetchData();
     } catch (error) {
       console.error("Failed to delete device:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      toast.error(`Failed to delete device: ${errorMessage}`);
+      toast.error(`Failed to delete device: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsUpdating(false);
     }
@@ -241,11 +226,7 @@ export default function DevicePage() {
 
   const openModal = useCallback((device: Device) => {
     setSelectedDevice(device);
-    setEditedDevice({ 
-      name: device.name, 
-      location: device.location, 
-      status: device.status 
-    });
+    setEditedDevice({ name: device.name, location: device.location, status: device.status });
     setIsModalOpen(true);
   }, []);
   
@@ -269,25 +250,21 @@ export default function DevicePage() {
     setEditedConfig({});
   }, []);
 
-  const getStatusBadgeClass = (status: Device["status"]) => {
+  const getStatusBadgeClass = (statusValue: Device["status"]) => {
     const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
-    switch (status) {
-      case "ACTIVE":
-        return `${baseClasses} bg-green-100 text-green-800`;
-      case "INACTIVE":
-        return `${baseClasses} bg-red-100 text-red-800`;
-      case "MAINTENANCE":
-        return `${baseClasses} bg-yellow-100 text-yellow-800`;
-      default:
-        return `${baseClasses} bg-gray-100 text-gray-800`;
+    switch (statusValue) {
+      case "ACTIVE": return `${baseClasses} bg-green-100 text-green-800`;
+      case "INACTIVE": return `${baseClasses} bg-red-100 text-red-800`;
+      case "MAINTENANCE": return `${baseClasses} bg-yellow-100 text-yellow-800`;
+      default: return `${baseClasses} bg-gray-100 text-gray-800`;
     }
   };
 
-  if (status === "loading") {
+  if (sessionStatus === "loading") {
     return <div className="p-4 md:p-8">Loading...</div>;
   }
 
-  if (status === "unauthenticated") {
+  if (sessionStatus === "unauthenticated") {
     return <div className="p-4 md:p-8">Please log in to access this page.</div>;
   }
 
@@ -307,16 +284,13 @@ export default function DevicePage() {
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <Input
           placeholder="Filter by location..."
-          value={filters.location}
-          onChange={(e) => setFilters(prev => ({ ...prev, location: e.target.value }))}
+          value={locationFilter}
+          onChange={(e) => handleFilterChange('location', e.target.value)}
           className="max-w-sm"
         />
         <Select
-          value={filters.status || "all"}
-          onValueChange={(value) => setFilters(prev => ({ 
-            ...prev, 
-            status: value === "all" ? "" : value 
-          }))}
+          value={statusFilter || "all"}
+          onValueChange={(value) => handleFilterChange('status', value === "all" ? "" : value)}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter by status" />
@@ -328,14 +302,14 @@ export default function DevicePage() {
             <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={resetFilters} disabled={!filters.location && !filters.status}>
+        <Button onClick={resetFilters} disabled={!locationFilter && !statusFilter}>
           Reset Filters
         </Button>
       </div>
 
       {/* Devices Table */}
       <div className="overflow-x-auto mb-6">
-        {isUpdating ? (
+        {isDataLoading ? (
           <div className="text-center py-8">Loading devices...</div>
         ) : (
           <Table>
@@ -379,28 +353,13 @@ export default function DevicePage() {
                     </TableCell>
                     <TableCell>{device._count?.surveys ?? 0}</TableCell>
                     <TableCell className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={() => openModal(device)}
-                        disabled={isUpdating}
-                      >
+                      <Button variant="outline" size="icon" onClick={() => openModal(device)} disabled={isUpdating}>
                         <PencilIcon className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={() => openConfigModal(device)}
-                        disabled={isUpdating}
-                      >
+                      <Button variant="outline" size="icon" onClick={() => openConfigModal(device)} disabled={isUpdating}>
                         <SettingsIcon className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="destructive" 
-                        size="icon" 
-                        onClick={() => openDeleteModal(device)}
-                        disabled={isUpdating}
-                      >
+                      <Button variant="destructive" size="icon" onClick={() => openDeleteModal(device)} disabled={isUpdating}>
                         <Trash2Icon className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -413,48 +372,15 @@ export default function DevicePage() {
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mt-4">
-        <div className="flex gap-1 items-center">
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={pagination.page === 1}
-            onClick={() => handlePageChange(1)}
-            aria-label="First page"
-          >«</button>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={!pagination.hasPrev}
-            onClick={() => handlePageChange(page - 1)}
-            aria-label="Previous page"
-          >‹</button>
-          <span className="mx-2 text-sm font-medium">Page {pagination.page} of {pagination.totalPages}</span>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={!pagination.hasNext}
-            onClick={() => handlePageChange(page + 1)}
-            aria-label="Next page"
-          >›</button>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={pagination.page === pagination.totalPages}
-            onClick={() => handlePageChange(pagination.totalPages)}
-            aria-label="Last page"
-          >»</button>
-        </div>
-        <div className="flex gap-2 items-center justify-end">
-          <span className="text-sm">Rows per page:</span>
-          <select
-            className="border px-2 py-1 rounded text-sm focus:ring-2 focus:ring-primary"
-            value={limit}
-            onChange={(e) => handleLimitChange(Number(e.target.value))}
-          >
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-      </div>
+      <PaginationControls
+          page={page}
+          limit={limit}
+          totalPages={paginationMeta.totalPages}
+          hasNext={paginationMeta.hasNext}
+          hasPrev={paginationMeta.hasPrev}
+          onPageChange={handlePageChange}
+          onLimitChange={handleLimitChange}
+      />
 
       {/* Edit Modal */}
       {isModalOpen && selectedDevice && (
