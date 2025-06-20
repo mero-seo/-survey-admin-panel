@@ -1,23 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from "recharts";
 import { useSession } from "next-auth/react";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
-import { TimePicker } from "@/components/ui/time-picker";
 import { Calendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon, BarChart3, Star, ThumbsUp, ThumbsDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -28,6 +20,16 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import { StatCard } from "@/components/StatCard";
+import { PaginationControls } from "@/components/PaginationControls";
+import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
+
+interface SurveyStats {
+  total: number;
+  excellent: number;
+  satisfactory: number;
+  average: number;
+}
 
 interface Survey {
   id: string;
@@ -41,30 +43,14 @@ interface Survey {
   device?: { name: string; status: string };
 }
 
-const dummySurveys: Survey[] = [
-  {
-    id: "1",
-    deviceInfo: { model: "Device A", os: "Android", version: "12", appVersion: "1.0" },
-    deviceId: "A123",
-    location: "Front Desk",
-    answer: "Excellent",
-    timestamp: "2024-06-01T10:00:00",
-    syncStatus: "SYNCED",
-    createdAt: "2024-06-01T10:00:00",
-    device: { name: "Device A", status: "Online" }
-  },
-  {
-    id: "2",
-    deviceInfo: { model: "Device B", os: "iOS", version: "15.4.1", appVersion: "2.0" },
-    deviceId: "B456",
-    location: "Lobby",
-    answer: "Satisfactory",
-    timestamp: "2024-06-02T11:00:00",
-    syncStatus: "NOT_SYNCED",
-    createdAt: "2024-06-02T11:00:00",
-    device: { name: "Device B", status: "Offline" }
-  }
-];
+interface PaginationMeta {
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+type SortOrder = "asc" | "desc";
 
 const timeShifts = [
   { label: 'Morning (5:00AM–11:59AM)', value: 'morning', start: '05:00', end: '11:59' },
@@ -94,93 +80,71 @@ const dummyAnalytics = [
   { type: "Average", value: 2 }
 ];
 
-
-interface DummyStats {
-  locationBreakdown: Array<{
-    location: string;
-    total: number;
-    excellent: number;
-    satisfactory: number;
-    average: number;
-  }>;
-  dailyBreakdown: Array<{
-    date: string;
-    total: number;
-    excellent: number;
-    satisfactory: number;
-    average: number;
-  }>;
-}
-
-const dummyStats: DummyStats = {
-  locationBreakdown: [
-    { location: "Front Desk", total: 40, excellent: 20, satisfactory: 15, average: 5 },
-    { location: "Lobby", total: 35, excellent: 15, satisfactory: 12, average: 8 },
-    { location: "Cafeteria", total: 25, excellent: 10, satisfactory: 10, average: 5 },
-    { location: "Waiting Area", total: 30, excellent: 12, satisfactory: 13, average: 5 },
-    { location: "Reception", total: 20, excellent: 8, satisfactory: 7, average: 5 },
-  ],
-  dailyBreakdown: [
-    { date: "2024-06-01", total: 10, excellent: 5, satisfactory: 3, average: 2 },
-    { date: "2024-06-02", total: 12, excellent: 6, satisfactory: 4, average: 2 },
-    { date: "2024-06-03", total: 15, excellent: 7, satisfactory: 6, average: 2 },
-    { date: "2024-06-04", total: 18, excellent: 8, satisfactory: 7, average: 3 },
-    { date: "2024-06-05", total: 20, excellent: 10, satisfactory: 7, average: 3 },
-    { date: "2024-06-06", total: 17, excellent: 8, satisfactory: 6, average: 3 },
-    { date: "2024-06-07", total: 22, excellent: 11, satisfactory: 8, average: 3 },
-    { date: "2024-06-08", total: 19, excellent: 9, satisfactory: 7, average: 3 },
-    { date: "2024-06-09", total: 16, excellent: 7, satisfactory: 6, average: 3 },
-    { date: "2024-06-10", total: 21, excellent: 10, satisfactory: 8, average: 3 },
-    { date: "2024-06-11", total: 18, excellent: 8, satisfactory: 7, average: 3 },
-    { date: "2024-06-12", total: 20, excellent: 9, satisfactory: 8, average: 3 },
-    { date: "2024-06-13", total: 23, excellent: 11, satisfactory: 9, average: 3 },
-    { date: "2024-06-14", total: 17, excellent: 8, satisfactory: 6, average: 3 },
-    { date: "2024-06-15", total: 19, excellent: 9, satisfactory: 7, average: 3 },
-  ]
-};
-
-// Types for analytics breakdowns
 type Breakdown = { date: string; total: number; excellent: number; satisfactory: number; average: number };
 type LocationBreakdown = { location: string; total: number; excellent: number; satisfactory: number; average: number };
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 export default function SurveyPage() {
-  const { data: session, status } = useSession();
-  const [surveys, setSurveys] = useState<Survey[]>(dummySurveys);
+  const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // URL-based state
+  const page = parseInt(searchParams.get("page") || "1");
+  const limit = parseInt(searchParams.get("limit") || "10");
+  const sortBy = searchParams.get("sortBy") || "createdAt";
+  const sortOrder = (searchParams.get("sortOrder") as SortOrder) || "desc";
+  const locationFilter = searchParams.get("location") || "";
+  const answerFilter = searchParams.get("answer") || "";
+  const timeShift = searchParams.get("timeShift") || "";
+
+  const startDateParam = searchParams.get("startDate");
+  const endDateParam = searchParams.get("endDate");
+
+  const dateRange: DateRange | undefined = useMemo(() => {
+    if (startDateParam && endDateParam) {
+      return { from: new Date(startDateParam), to: new Date(endDateParam) };
+    }
+    return undefined;
+  }, [startDateParam, endDateParam]);
+
+  // Component state
+  const [surveys, setSurveys] = useState<Survey[]>([]);
   const [isDummy, setIsDummy] = useState(true);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-  const [filters, setFilters] = useState({
-    location: "",
-    deviceId: "",
-    answer: "",
-    startDate: "",
-    endDate: ""
-  });
-  const [pagination, setPagination] = useState({
-    page: 1, limit: 10, total: 0, totalPages: 1, hasNext: false, hasPrev: false
-  });
+  const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({ total: 0, totalPages: 1, hasNext: false, hasPrev: false });
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<string>("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
-  const [startTime, setStartTime] = useState<string>("00:00");
-  const [endTime, setEndTime] = useState<string>("23:59");
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
   const [exportScope, setExportScope] = useState<'filtered' | 'all'>('filtered');
-  const exportBtnRef = useRef<HTMLButtonElement>(null);
-  const [timeShift, setTimeShift] = useState<string>("");
   const [dailyBreakdown, setDailyBreakdown] = useState<Breakdown[]>([]);
   const [locationBreakdown, setLocationBreakdown] = useState<LocationBreakdown[]>([]);
   const [responseDistribution, setResponseDistribution] = useState<{excellent: number, satisfactory: number, average: number}>({excellent: 0, satisfactory: 0, average: 0});
+  const [surveyStats, setSurveyStats] = useState<SurveyStats | null>(null);
   const pieColors = ["#22c55e", "#eab308", "#ef4444"];
 
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
+  const updateSearchParams = useCallback((paramsToUpdate: Record<string, string | number | null | Date>) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    Object.entries(paramsToUpdate).forEach(([key, value]) => {
+      if (value === null || value === '') {
+        newParams.delete(key);
+      } else if (value instanceof Date) {
+        newParams.set(key, value.toISOString().split('T')[0]);
+      } 
+      else {
+        newParams.set(key, String(value));
+      }
+    });
+    router.push(`${pathname}?${newParams.toString()}`, { scroll: false });
+  }, [searchParams, router, pathname]);
+
   useEffect(() => {
-    if (status !== "authenticated" || !session?.user?.accessToken) return;
+    if (sessionStatus !== "authenticated" || !session?.user?.accessToken) return;
+
     const fetchData = async () => {
+      setIsDataLoading(true);
       try {
         const params: Record<string, string | number> = {
           page,
@@ -188,42 +152,36 @@ export default function SurveyPage() {
           sortBy,
           sortOrder,
         };
-        if (filters.location) params.location = filters.location;
-        if (filters.answer) params.answer = filters.answer;
-        if (dateRange?.from) {
-          const start = new Date(dateRange.from);
-          const [sh, sm] = startTime.split(":");
-          start.setHours(Number(sh), Number(sm), 0, 0);
-          params.startDate = start.toISOString();
-        }
+        if (locationFilter) params.location = locationFilter;
+        if (answerFilter) params.answer = answerFilter;
+        if (dateRange?.from) params.startDate = dateRange.from.toISOString();
         if (dateRange?.to) {
-          const end = new Date(dateRange.to);
-          const [eh, em] = endTime.split(":");
-          end.setHours(Number(eh), Number(em), 59, 999);
-          params.endDate = end.toISOString();
+          const endOfDay = new Date(dateRange.to);
+          endOfDay.setHours(23, 59, 59, 999);
+          params.endDate = endOfDay.toISOString();
         }
+
         const surveyRes = await apiClient.get("/surveys", {
           params,
-          headers: {
-            Authorization: `Bearer ${session.user.accessToken}`,
-          },
+          headers: { Authorization: `Bearer ${session.user.accessToken}` },
         });
+
         let filtered = surveyRes.data.data || [];
         if (timeShift) {
-          filtered = filtered.filter((s: Survey) => {
-            const d = new Date(s.timestamp || s.createdAt);
-            return isWithinTimeShift(d, timeShift);
-          });
+          filtered = filtered.filter((s: Survey) => isWithinTimeShift(new Date(s.timestamp || s.createdAt), timeShift));
         }
+
         setSurveys(filtered);
-        setPagination(surveyRes.data.meta?.pagination || pagination);
+        setPaginationMeta(surveyRes.data.meta?.pagination || { total: 0, totalPages: 1, hasNext: false, hasPrev: false });
         setIsDummy(false);
         const uniqueLocations = Array.from(new Set((surveyRes.data.data || []).map((s: Survey) => s.location))) as string[];
         setLocationOptions(uniqueLocations);
 
+        const statsRes = await apiClient.get("/surveys/stats", { headers: { Authorization: `Bearer ${session.user.accessToken}` } });
+        setSurveyStats(statsRes.data.data);
+
         // Compute analytics from filtered surveys
-        // Daily breakdown
-        const dailyMap: Record<string, {date: string, total: number, excellent: number, satisfactory: number, average: number}> = {};
+        const dailyMap: Record<string, Breakdown> = {};
         filtered.forEach((s: Survey) => {
           const date = (s.timestamp || s.createdAt).slice(0, 10);
           if (!dailyMap[date]) dailyMap[date] = {date, total: 0, excellent: 0, satisfactory: 0, average: 0};
@@ -234,8 +192,7 @@ export default function SurveyPage() {
         });
         setDailyBreakdown(Object.values(dailyMap));
 
-        // Location breakdown
-        const locMap: Record<string, {location: string, total: number, excellent: number, satisfactory: number, average: number}> = {};
+        const locMap: Record<string, LocationBreakdown> = {};
         filtered.forEach((s: Survey) => {
           const location = s.location || 'Unknown';
           if (!locMap[location]) locMap[location] = {location, total: 0, excellent: 0, satisfactory: 0, average: 0};
@@ -246,7 +203,6 @@ export default function SurveyPage() {
         });
         setLocationBreakdown(Object.values(locMap));
 
-        // Response distribution
         let excellent = 0, satisfactory = 0, average = 0;
         filtered.forEach((s: Survey) => {
           if (s.answer === 'EXCELLENT' || s.answer === 'Excellent') excellent++;
@@ -254,74 +210,68 @@ export default function SurveyPage() {
           else if (s.answer === 'AVERAGE' || s.answer === 'Average') average++;
         });
         setResponseDistribution({excellent, satisfactory, average});
-      } catch {
-        let filtered = dummySurveys;
-        if (timeShift) {
-          filtered = filtered.filter((s: Survey) => {
-            const d = new Date(s.timestamp || s.createdAt);
-            return isWithinTimeShift(d, timeShift);
-          });
-        }
-        setSurveys(filtered);
-        setPagination({
-          page: 1, limit: 10, total: dummySurveys.length, totalPages: 1, hasNext: false, hasPrev: false
-        });
+
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+        setSurveys([]);
+        setPaginationMeta({ total: 0, totalPages: 1, hasNext: false, hasPrev: false });
         setIsDummy(true);
         setLocationOptions([]);
         setDailyBreakdown([]);
         setLocationBreakdown([]);
         setResponseDistribution({excellent: 0, satisfactory: 0, average: 0});
+        setSurveyStats(null);
+      } finally {
+        setIsDataLoading(false);
       }
     };
     fetchData();
-    // eslint-disable-next-line
-  }, [status, session, page, limit, filters, sortBy, sortOrder, dateRange, startTime, endTime, timeShift]);
+  }, [sessionStatus, session, page, limit, sortBy, sortOrder, locationFilter, answerFilter, dateRange, timeShift]);
 
-  useEffect(() => {
-    if (dateRange) {
-      setStartTime("00:00");
-      setEndTime("23:59");
+  const handleExport = () => {
+    let url = `/api/v1/surveys/export?format=${exportFormat}`;
+    if (exportScope === 'filtered') {
+        const filteredParams = new URLSearchParams(searchParams.toString());
+        filteredParams.delete('page');
+        filteredParams.delete('limit');
+        url += `&${filteredParams.toString()}`;
     }
-  }, [dateRange]);
-
-  useEffect(() => {
-    if (timeShift === "morning") {
-      setStartTime("05:00");
-      setEndTime("11:59");
-    } else if (timeShift === "day") {
-      setStartTime("12:00");
-      setEndTime("18:59");
-    } else if (timeShift === "night") {
-      setStartTime("19:00");
-      setEndTime("04:59");
-    } else {
-      setStartTime("00:00");
-      setEndTime("23:59");
-    }
-  }, [timeShift]);
-
-  const handleSelectChange = (name: string, value: string) => {
-    let val = value;
-    if (name === "answer") val = val.toUpperCase();
-    setFilters({ ...filters, [name]: val });
-    setPage(1);
+    window.open(url, '_blank');
+    setExportModalOpen(false);
   };
 
   const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(column);
-      setSortOrder("asc");
-    }
+    const newSortOrder = sortBy === column && sortOrder === 'asc' ? 'desc' : 'asc';
+    updateSearchParams({ sortBy: column, sortOrder: newSortOrder, page: 1 });
+  };
+  
+  const handlePageChange = (newPage: number) => {
+    updateSearchParams({ page: newPage });
+  };
+  
+  const handleLimitChange = (newLimit: number) => {
+    updateSearchParams({ limit: newLimit, page: 1 });
+  };
+
+  const handleFilterChange = (key: 'location' | 'answer' | 'timeShift', value: string) => {
+    updateSearchParams({ [key]: value, page: 1 });
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    updateSearchParams({ 
+      startDate: range?.from || null, 
+      endDate: range?.to || null,
+      page: 1
+    });
   };
 
   const clearFilter = useCallback((key: string) => {
-    if (key === "dateRange") setDateRange(undefined);
-    else if (key === "startTime") setStartTime("00:00");
-    else if (key === "endTime") setEndTime("23:59");
-    else setFilters((prev) => ({ ...prev, [key]: "" }));
-  }, []);
+    if (key === "dateRange") {
+      updateSearchParams({ startDate: null, endDate: null, page: 1 });
+    } else {
+      updateSearchParams({ [key]: null, page: 1 });
+    }
+  }, [updateSearchParams]);
 
   const getFilterChips = () => {
     const chips: {key: string, label: string}[] = [];
@@ -331,10 +281,12 @@ export default function SurveyPage() {
       if (dateRange?.to) label += ` - ${dateRange.to.toLocaleDateString()}`;
       chips.push({ key: "dateRange", label: `Date: ${label}` });
     }
-    if (startTime !== "00:00") chips.push({ key: "startTime", label: `Start: ${startTime}` });
-    if (endTime !== "23:59") chips.push({ key: "endTime", label: `End: ${endTime}` });
-    if (filters.location) chips.push({ key: "location", label: `Location: ${filters.location}` });
-    if (filters.answer) chips.push({ key: "answer", label: `Rating: ${filters.answer}` });
+    if (locationFilter) chips.push({ key: "location", label: `Location: ${locationFilter}` });
+    if (answerFilter) chips.push({ key: "answer", label: `Rating: ${answerFilter}` });
+    if (timeShift) {
+        const shift = timeShifts.find(ts => ts.value === timeShift);
+        if(shift) chips.push({key: "timeShift", label: `Shift: ${shift.label}`})
+    }
     return chips;
   };
 
@@ -343,32 +295,71 @@ export default function SurveyPage() {
     let from: Date;
     const to = new Date(now);
     switch (type) {
-      case 'today':
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case 'week':
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-        break;
-      case 'month':
-        from = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      case 'last7':
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-        break;
-      default:
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      case 'today': from = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
+      case 'week': from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()); break;
+      case 'month': from = new Date(now.getFullYear(), now.getMonth(), 1); break;
+      case 'last7': from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6); break;
+      default: from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     }
-    setDateRange({ from, to });
+    handleDateRangeChange({ from, to });
   };
 
   const resetFilters = () => {
-    setDateRange(undefined);
-    setStartTime("00:00");
-    setEndTime("23:59");
-    setTimeShift("");
-    setFilters({ location: "", deviceId: "", answer: "", startDate: "", endDate: "" });
-    setPage(1);
+    updateSearchParams({
+      startDate: null,
+      endDate: null,
+      location: null,
+      answer: null,
+      timeShift: null,
+      page: 1,
+    });
   };
+
+  const columns: ColumnDef<Survey>[] = [
+    { id: "id", header: "ID", cell: (survey) => survey.id.slice(-6), enableSorting: true },
+    {
+      id: "timestamp",
+      header: "Date",
+      cell: (survey) => (survey.timestamp ? survey.timestamp.slice(0, 10) : ""),
+      enableSorting: true,
+    },
+    { id: "location", header: "Location", cell: (survey) => survey.location, enableSorting: true },
+    {
+      id: "deviceId",
+      header: "Device",
+      cell: (survey) => survey.device?.name || survey.deviceId,
+      enableSorting: true,
+    },
+    {
+      id: "timestamp_time",
+      header: "Time",
+      cell: (survey) =>
+        survey.timestamp
+          ? new Date(survey.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : survey.createdAt
+          ? new Date(survey.createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "",
+    },
+    {
+      id: "answer",
+      header: "Rating",
+      cell: (survey) =>
+        survey.answer ? survey.answer.charAt(0) + survey.answer.slice(1).toLowerCase() : "",
+      enableSorting: true,
+    },
+    {
+      id: "syncStatus",
+      header: "Synced",
+      cell: (survey) => (survey.syncStatus === "SYNCED" ? "Yes" : "No"),
+      enableSorting: true,
+    },
+  ];
 
   return (
     <div className="p-4 md:p-8">
@@ -378,6 +369,14 @@ export default function SurveyPage() {
           {isDummy ? "Dummy Data" : "Live from API"}
         </span>
       </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+        <StatCard title="Total Surveys" value={surveyStats?.total} icon={<BarChart3 className="text-blue-500" size={20} />} colors="from-blue-50 to-blue-100" textColor="text-blue-700" />
+        <StatCard title="Excellent" value={surveyStats?.excellent} icon={<Star className="text-green-500" size={20} />} colors="from-green-50 to-green-100" textColor="text-green-700" />
+        <StatCard title="Satisfactory" value={surveyStats?.satisfactory} icon={<ThumbsUp className="text-yellow-500" size={20} />} colors="from-yellow-50 to-yellow-100" textColor="text-yellow-700" />
+        <StatCard title="Average" value={surveyStats?.average} icon={<ThumbsDown className="text-red-500" size={20} />} colors="from-red-50 to-red-100" textColor="text-red-700" />
+      </div>
+      
       <div className={cn("sticky top-0 z-10 bg-white border-b border-muted/30 mb-2", !filtersOpen && "shadow-sm")}
         style={{ transition: "box-shadow 0.2s" }}>
         <div className="flex items-center justify-between px-2 py-2">
@@ -420,58 +419,31 @@ export default function SurveyPage() {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-[220px] justify-start text-left font-normal">
-                        {dateRange?.from
-                          ? dateRange.to
-                            ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to.toLocaleDateString()}`
-                            : dateRange.from.toLocaleDateString()
-                          : "Pick a date range"}
+                        {dateRange?.from ? (dateRange.to ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to.toLocaleDateString()}` : dateRange.from.toLocaleDateString()) : "Pick a date range"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-auto p-0">
-                      <Calendar
-                        mode="range"
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                      />
+                      <Calendar mode="range" selected={dateRange} onSelect={handleDateRangeChange} numberOfMonths={2} />
                     </PopoverContent>
                   </Popover>
                 </div>
-                <Select value={timeShift} onValueChange={val => setTimeShift(val)}>
+                <Select value={timeShift} onValueChange={val => handleFilterChange('timeShift', val)}>
                   <SelectTrigger className="w-[180px] mt-2 md:mt-0">
                     <SelectValue placeholder="All Time Shifts" />
                   </SelectTrigger>
                   <SelectContent>
-                    {timeShifts.map(shift => (
-                      <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>
-                    ))}
+                    {timeShifts.map(shift => <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <TimePicker
-                  value={startTime}
-                  onChange={setStartTime}
-                  label="Start time"
-                  id="start-time"
-                  disabled={!!timeShift}
-                />
-                <TimePicker
-                  value={endTime}
-                  onChange={setEndTime}
-                  label="End time"
-                  id="end-time"
-                  disabled={!!timeShift}
-                />
-                <Select value={filters.location} onValueChange={val => handleSelectChange('location', val)}>
+                <Select value={locationFilter} onValueChange={val => handleFilterChange('location', val)}>
                   <SelectTrigger className="w-[180px] mt-2 md:mt-0">
                     <SelectValue placeholder="All Locations" />
                   </SelectTrigger>
                   <SelectContent>
-                    {locationOptions.map(location => (
-                      <SelectItem key={location} value={location}>{location}</SelectItem>
-                    ))}
+                    {locationOptions.map(location => <SelectItem key={location} value={location}>{location}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Select value={filters.answer} onValueChange={val => handleSelectChange('answer', val)}>
+                <Select value={answerFilter} onValueChange={val => handleFilterChange('answer', val)}>
                   <SelectTrigger className="w-[180px] mt-2 md:mt-0">
                     <SelectValue placeholder="All Ratings" />
                   </SelectTrigger>
@@ -512,7 +484,7 @@ export default function SurveyPage() {
         </div>
       </div>
       <div className="flex justify-end items-center mb-2">
-        <Button ref={exportBtnRef} onClick={() => setExportModalOpen(true)} variant="outline" className="ml-auto">Export</Button>
+        <Button onClick={() => setExportModalOpen(true)} variant="outline" className="ml-auto">Export</Button>
       </div>
       {exportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -534,104 +506,31 @@ export default function SurveyPage() {
             </div>
             <div className="flex gap-2 mt-4">
               <Button variant="outline" onClick={() => setExportModalOpen(false)} className="flex-1">Cancel</Button>
-              <Button variant="default" className="flex-1" onClick={async () => {
-                // Build export URL for direct backend call
-                let url = `${BACKEND_API_URL}/surveys/export?format=${exportFormat}`;
-                if (exportScope === 'filtered') {
-                  if (filters.location) url += `&location=${encodeURIComponent(filters.location)}`;
-                  if (filters.answer) url += `&answer=${encodeURIComponent(filters.answer)}`;
-                  if (dateRange?.from) url += `&startDate=${encodeURIComponent(dateRange.from.toISOString())}`;
-                  if (dateRange?.to) url += `&endDate=${encodeURIComponent(dateRange.to.toISOString())}`;
-                  if (startTime !== "00:00" && dateRange?.from) {
-                    const d = new Date(dateRange.from);
-                    const [h, m] = startTime.split(":");
-                    d.setHours(Number(h), Number(m), 0, 0);
-                    url = url.replace(`startDate=${encodeURIComponent(dateRange.from.toISOString())}`, `startDate=${encodeURIComponent(d.toISOString())}`);
-                  }
-                  if (endTime !== "23:59" && dateRange?.to) {
-                    const d = new Date(dateRange.to);
-                    const [h, m] = endTime.split(":");
-                    d.setHours(Number(h), Number(m), 59, 999);
-                    url = url.replace(`endDate=${encodeURIComponent(dateRange.to.toISOString())}`, `endDate=${encodeURIComponent(d.toISOString())}`);
-                  }
-                }
-                window.open(url, '_blank');
-                setExportModalOpen(false);
-              }}>Export</Button>
+              <Button variant="default" className="flex-1" onClick={handleExport}>Export</Button>
             </div>
           </div>
         </div>
       )}
-      <div className="overflow-x-auto mb-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("id")}>ID {sortBy === "id" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("timestamp")}>Date {sortBy === "timestamp" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("location")}>Location {sortBy === "location" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("deviceId")}>Device {sortBy === "deviceId" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("timestamp")}>Time {sortBy === "timestamp" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("answer")}>Rating {sortBy === "answer" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("syncStatus")}>Synced {sortBy === "syncStatus" && (sortOrder === "asc" ? "▲" : "▼")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {surveys.map((survey) => (
-              <TableRow key={survey.id}>
-                <TableCell>{survey.id}</TableCell>
-                <TableCell>{survey.timestamp ? survey.timestamp.slice(0, 10) : ''}</TableCell>
-                <TableCell>{survey.location}</TableCell>
-                <TableCell>{survey.device?.name || survey.deviceId}</TableCell>
-                <TableCell>{survey.timestamp ? new Date(survey.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (survey.createdAt ? new Date(survey.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')}</TableCell>
-                <TableCell>{survey.answer ? survey.answer.charAt(0) + survey.answer.slice(1).toLowerCase() : ''}</TableCell>
-                <TableCell>{survey.syncStatus === 'SYNCED' ? 'Yes' : 'No'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="rounded-md border mb-6 px-5">
+        <DynamicTable
+            columns={columns}
+            data={surveys}
+            isLoading={isDataLoading}
+            onSort={handleSort}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            emptyStateMessage="No surveys found for the selected filters."
+        />
       </div>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mt-4">
-        <div className="flex gap-1 items-center">
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={pagination.page === 1}
-            onClick={() => setPage(1)}
-            aria-label="First page"
-          >«</button>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={!pagination.hasPrev}
-            onClick={() => setPage(page - 1)}
-            aria-label="Previous page"
-          >‹</button>
-          <span className="mx-2 text-sm font-medium">Page {pagination.page} of {pagination.totalPages}</span>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={!pagination.hasNext}
-            onClick={() => setPage(page + 1)}
-            aria-label="Next page"
-          >›</button>
-          <button
-            className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
-            disabled={pagination.page === pagination.totalPages}
-            onClick={() => setPage(pagination.totalPages)}
-            aria-label="Last page"
-          >»</button>
-        </div>
-        <div className="flex gap-2 items-center justify-end">
-          <span className="text-sm">Rows per page:</span>
-          <select
-            className="border px-2 py-1 rounded text-sm focus:ring-2 focus:ring-primary"
-            value={limit}
-            onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
-          >
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-      </div>
+      <PaginationControls
+          page={page}
+          limit={limit}
+          totalPages={paginationMeta.totalPages}
+          hasNext={paginationMeta.hasNext}
+          hasPrev={paginationMeta.hasPrev}
+          onPageChange={handlePageChange}
+          onLimitChange={handleLimitChange}
+      />
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
@@ -640,7 +539,7 @@ export default function SurveyPage() {
           <CardContent>
             <div className="w-full h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyBreakdown.length > 0 ? dailyBreakdown : dummyStats.dailyBreakdown}>
+                <BarChart data={dailyBreakdown.length > 0 ? dailyBreakdown : []}>
                   <XAxis dataKey="date" />
                   <YAxis />
                   <Tooltip />
@@ -660,7 +559,7 @@ export default function SurveyPage() {
           <CardContent>
             <div className="w-full h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={locationBreakdown.length > 0 ? locationBreakdown : dummyStats.locationBreakdown}>
+                <BarChart data={locationBreakdown.length > 0 ? locationBreakdown : []}>
                   <XAxis dataKey="location" />
                   <YAxis />
                   <Tooltip />
