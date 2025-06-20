@@ -66,8 +66,17 @@ interface Pagination {
   hasPrev: boolean;
 }
 
+interface Filters {
+  location: string;
+  status: string;
+}
+
+type SortOrder = "asc" | "desc";
+
 export default function DevicePage() {
   const { data: session, status } = useSession();
+  
+  // Main data states
   const [devices, setDevices] = useState<Device[]>([]);
   const [stats, setStats] = useState<DeviceStats>({
     total: 0,
@@ -75,6 +84,8 @@ export default function DevicePage() {
     inactive: 0,
     maintenance: 0,
   });
+  
+  // Pagination and filtering states
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 10,
@@ -83,18 +94,21 @@ export default function DevicePage() {
     hasNext: false,
     hasPrev: false,
   });
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-  const [filters, setFilters] = useState({ location: "", status: "" });
+  const [filters, setFilters] = useState<Filters>({ location: "", status: "" });
   const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  
+  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [editedDevice, setEditedDevice] = useState<Partial<Device>>({});
   const [editedConfig, setEditedConfig] = useState<Partial<DeviceConfiguration>>({});
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Extract page and limit from pagination state
+  const { page, limit } = pagination;
 
   const fetchData = useCallback(async () => {
     if (status !== "authenticated" || !session?.user?.accessToken) return;
@@ -114,7 +128,13 @@ export default function DevicePage() {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
       });
       setDevices(deviceRes.data.data || []);
-      setPagination(deviceRes.data.meta?.pagination || pagination);
+
+      // Only update pagination if the API provides new data for it.
+      // This avoids depending on the old 'pagination' state, which caused the infinite loop.
+      const newPagination = deviceRes.data.meta?.pagination;
+      if (newPagination) {
+        setPagination(newPagination);
+      }
 
       const statsRes = await apiClient.get("/devices/stats", {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
@@ -124,7 +144,8 @@ export default function DevicePage() {
       console.error("Failed to fetch data:", error);
       toast.error(`Failed to fetch device data: ${error}`);
     }
-  }, [session, status, page, limit, filters, sortBy, sortOrder, pagination]);
+    // With the change above, 'pagination' is no longer a dependency of this function.
+  }, [session, status, page, limit, filters, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchData();
@@ -139,22 +160,44 @@ export default function DevicePage() {
     }
   };
 
+  const handlePageChange = useCallback((newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  }, []);
+
+  const handleLimitChange = useCallback((newLimit: number) => {
+    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setFilters({ location: "", status: "" });
+  }, []);
+
   const handleUpdateDevice = async () => {
-    if (!selectedDevice || !session?.user?.accessToken) return;
+    if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
+    
+    setIsUpdating(true);
     try {
       await apiClient.put(`/devices/${selectedDevice.id}`, editedDevice, {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
       });
       toast.success("Device updated successfully.");
       setIsModalOpen(false);
-      fetchData();
+      setSelectedDevice(null);
+      setEditedDevice({});
+      await fetchData();
     } catch (error) {
-      toast.error(`Failed to update device. ${error}`);
+      console.error("Failed to update device:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to update device: ${errorMessage}`);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   const handleUpdateConfig = async () => {
-    if (!selectedDevice || !session?.user?.accessToken) return;
+    if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
+    
+    setIsUpdating(true);
     try {
       await apiClient.put(
         `/devices/${selectedDevice.id}/config`,
@@ -163,27 +206,40 @@ export default function DevicePage() {
       );
       toast.success("Device configuration updated.");
       setIsConfigModalOpen(false);
-      fetchData();
+      setSelectedDevice(null);
+      setEditedConfig({});
+      await fetchData();
     } catch (error) {
-      toast.error(`Failed to update configuration. ${error}`);
+      console.error("Failed to update configuration:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to update configuration: ${errorMessage}`);
+    } finally {
+      setIsUpdating(false);
     }
   };
   
   const handleDeleteDevice = async () => {
-    if (!selectedDevice || !session?.user?.accessToken) return;
+    if (!selectedDevice || !session?.user?.accessToken || isUpdating) return;
+    
+    setIsUpdating(true);
     try {
       await apiClient.delete(`/devices/${selectedDevice.id}`, {
         headers: { Authorization: `Bearer ${session.user.accessToken}` },
       });
       toast.success("Device deleted successfully.");
       setIsDeleteModalOpen(false);
-      fetchData();
+      setSelectedDevice(null);
+      await fetchData();
     } catch (error) {
-      toast.error(`Failed to delete device. ${error}`);
+      console.error("Failed to delete device:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to delete device: ${errorMessage}`);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  const openModal = (device: Device) => {
+  const openModal = useCallback((device: Device) => {
     setSelectedDevice(device);
     setEditedDevice({ 
       name: device.name, 
@@ -191,18 +247,27 @@ export default function DevicePage() {
       status: device.status 
     });
     setIsModalOpen(true);
-  };
+  }, []);
   
-  const openConfigModal = (device: Device) => {
+  const openConfigModal = useCallback((device: Device) => {
     setSelectedDevice(device);
-    setEditedConfig(device.configuration);
+    setEditedConfig({ ...device.configuration });
     setIsConfigModalOpen(true);
-  };
+  }, []);
 
-  const openDeleteModal = (device: Device) => {
+  const openDeleteModal = useCallback((device: Device) => {
     setSelectedDevice(device);
     setIsDeleteModalOpen(true);
-  };
+  }, []);
+
+  const closeAllModals = useCallback(() => {
+    setIsModalOpen(false);
+    setIsConfigModalOpen(false);
+    setIsDeleteModalOpen(false);
+    setSelectedDevice(null);
+    setEditedDevice({});
+    setEditedConfig({});
+  }, []);
 
   const statCards = useMemo(
     () => [
@@ -230,6 +295,28 @@ export default function DevicePage() {
     [stats]
   );
 
+  const getStatusBadgeClass = (status: Device["status"]) => {
+    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
+    switch (status) {
+      case "ACTIVE":
+        return `${baseClasses} bg-green-100 text-green-800`;
+      case "INACTIVE":
+        return `${baseClasses} bg-red-100 text-red-800`;
+      case "MAINTENANCE":
+        return `${baseClasses} bg-yellow-100 text-yellow-800`;
+      default:
+        return `${baseClasses} bg-gray-100 text-gray-800`;
+    }
+  };
+
+  if (status === "loading") {
+    return <div className="p-4 md:p-8">Loading...</div>;
+  }
+
+  if (status === "unauthenticated") {
+    return <div className="p-4 md:p-8">Please log in to access this page.</div>;
+  }
+
   return (
     <div className="p-4 md:p-8">
       <h2 className="text-xl font-bold mb-4">Device Management</h2>
@@ -254,12 +341,15 @@ export default function DevicePage() {
         <Input
           placeholder="Filter by location..."
           value={filters.location}
-          onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+          onChange={(e) => setFilters(prev => ({ ...prev, location: e.target.value }))}
           className="max-w-sm"
         />
         <Select
           value={filters.status || "all"}
-          onValueChange={(value) => setFilters({ ...filters, status: value === "all" ? "" : value })}
+          onValueChange={(value) => setFilters(prev => ({ 
+            ...prev, 
+            status: value === "all" ? "" : value 
+          }))}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter by status" />
@@ -271,63 +361,88 @@ export default function DevicePage() {
             <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={() => setFilters({ location: "", status: "" })}>
+        <Button onClick={resetFilters} disabled={!filters.location && !filters.status}>
           Reset Filters
         </Button>
       </div>
 
       {/* Devices Table */}
       <div className="overflow-x-auto mb-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
-                Name {sortBy === "name" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("location")}>
-                Location {sortBy === "location" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("status")}>
-                Status {sortBy === "status" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("lastSeen")}>
-                Last Seen {sortBy === "lastSeen" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead>Surveys</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {devices.map((device) => (
-              <TableRow key={device.id}>
-                <TableCell>{device.name}</TableCell>
-                <TableCell>{device.location}</TableCell>
-                <TableCell>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    device.status === "ACTIVE" ? "bg-green-100 text-green-800" :
-                    device.status === "INACTIVE" ? "bg-red-100 text-red-800" :
-                    "bg-yellow-100 text-yellow-800"
-                  }`}>
-                    {device.status}
-                  </span>
-                </TableCell>
-                <TableCell>{device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "N/A"}</TableCell>
-                <TableCell>{device._count?.surveys ?? 0}</TableCell>
-                <TableCell className="flex gap-2">
-                  <Button variant="outline" size="icon" onClick={() => openModal(device)}>
-                    <PencilIcon className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="icon" onClick={() => openConfigModal(device)}>
-                    <SettingsIcon className="h-4 w-4" />
-                  </Button>
-                  <Button variant="destructive" size="icon" onClick={() => openDeleteModal(device)}>
-                    <Trash2Icon className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+        {isUpdating ? (
+          <div className="text-center py-8">Loading devices...</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
+                  Name {sortBy === "name" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("location")}>
+                  Location {sortBy === "location" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("status")}>
+                  Status {sortBy === "status" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("lastSeen")}>
+                  Last Seen {sortBy === "lastSeen" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
+                <TableHead>Surveys</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {devices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    No devices found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                devices.map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell>{device.name}</TableCell>
+                    <TableCell>{device.location}</TableCell>
+                    <TableCell>
+                      <span className={getStatusBadgeClass(device.status)}>
+                        {device.status}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "N/A"}
+                    </TableCell>
+                    <TableCell>{device._count?.surveys ?? 0}</TableCell>
+                    <TableCell className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => openModal(device)}
+                        disabled={isUpdating}
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => openConfigModal(device)}
+                        disabled={isUpdating}
+                      >
+                        <SettingsIcon className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        size="icon" 
+                        onClick={() => openDeleteModal(device)}
+                        disabled={isUpdating}
+                      >
+                        <Trash2Icon className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
       {/* Pagination */}
@@ -336,26 +451,26 @@ export default function DevicePage() {
           <button
             className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
             disabled={pagination.page === 1}
-            onClick={() => setPage(1)}
+            onClick={() => handlePageChange(1)}
             aria-label="First page"
           >«</button>
           <button
             className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
             disabled={!pagination.hasPrev}
-            onClick={() => setPage(page - 1)}
+            onClick={() => handlePageChange(page - 1)}
             aria-label="Previous page"
           >‹</button>
           <span className="mx-2 text-sm font-medium">Page {pagination.page} of {pagination.totalPages}</span>
           <button
             className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
             disabled={!pagination.hasNext}
-            onClick={() => setPage(page + 1)}
+            onClick={() => handlePageChange(page + 1)}
             aria-label="Next page"
           >›</button>
           <button
             className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-primary disabled:opacity-50 transition"
             disabled={pagination.page === pagination.totalPages}
-            onClick={() => setPage(pagination.totalPages)}
+            onClick={() => handlePageChange(pagination.totalPages)}
             aria-label="Last page"
           >»</button>
         </div>
@@ -364,7 +479,7 @@ export default function DevicePage() {
           <select
             className="border px-2 py-1 rounded text-sm focus:ring-2 focus:ring-primary"
             value={limit}
-            onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+            onChange={(e) => handleLimitChange(Number(e.target.value))}
           >
             <option value={10}>10</option>
             <option value={20}>20</option>
@@ -410,8 +525,12 @@ export default function DevicePage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <Button variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancel</Button>
-              <Button variant="default" onClick={handleUpdateDevice} className="flex-1">Save Changes</Button>
+              <Button variant="outline" onClick={closeAllModals} className="flex-1" disabled={isUpdating}>
+                Cancel
+              </Button>
+              <Button variant="default" onClick={handleUpdateDevice} className="flex-1" disabled={isUpdating}>
+                {isUpdating ? "Saving..." : "Save Changes"}
+              </Button>
             </div>
           </div>
         </div>
@@ -450,8 +569,12 @@ export default function DevicePage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <Button variant="outline" onClick={() => setIsConfigModalOpen(false)} className="flex-1">Cancel</Button>
-              <Button variant="default" onClick={handleUpdateConfig} className="flex-1">Save Configuration</Button>
+              <Button variant="outline" onClick={closeAllModals} className="flex-1" disabled={isUpdating}>
+                Cancel
+              </Button>
+              <Button variant="default" onClick={handleUpdateConfig} className="flex-1" disabled={isUpdating}>
+                {isUpdating ? "Saving..." : "Save Configuration"}
+              </Button>
             </div>
           </div>
         </div>
@@ -466,8 +589,12 @@ export default function DevicePage() {
               Are you sure you want to delete the device &quot;{selectedDevice.name}&quot;? This action cannot be undone.
             </p>
             <div className="flex gap-2 mt-6">
-              <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)} className="flex-1">Cancel</Button>
-              <Button variant="destructive" onClick={handleDeleteDevice} className="flex-1">Delete</Button>
+              <Button variant="outline" onClick={closeAllModals} className="flex-1" disabled={isUpdating}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteDevice} className="flex-1" disabled={isUpdating}>
+                {isUpdating ? "Deleting..." : "Delete"}
+              </Button>
             </div>
           </div>
         </div>
