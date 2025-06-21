@@ -24,6 +24,9 @@ import toast from "react-hot-toast";
 import { StatCard } from "@/components/StatCard";
 import { PaginationControls } from "@/components/PaginationControls";
 import { DynamicTable, ColumnDef } from "@/components/DynamicTable";
+import { StatCardSkeleton } from "@/components/StatCardSkeleton";
+import { TableSkeleton } from "@/components/TableSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface DeviceConfiguration {
   surveyInterval: number;
@@ -299,6 +302,25 @@ export default function DevicePage() {
 
   if (sessionStatus === "unauthenticated") {
     return <div className="p-4 md:p-8">Please log in to access this page.</div>;
+  }
+
+  if (isDataLoading) {
+      return (
+          <div className="p-4 md:p-8">
+              <Skeleton className="h-8 w-64 mb-4" />
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+                {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+              </div>
+              <div className="flex flex-col md:flex-row gap-4 mb-4">
+                  <Skeleton className="h-10 w-full max-w-sm" />
+                  <Skeleton className="h-10 w-[180px]" />
+                  <Skeleton className="h-10 w-28" />
+              </div>
+              <div className="rounded-md border">
+                <TableSkeleton columns={6} rows={5} />
+              </div>
+          </div>
+      )
   }
 
   return (
