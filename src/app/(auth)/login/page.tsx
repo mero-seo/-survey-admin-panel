@@ -59,7 +59,7 @@ function LoginPage() {
       <Card className="mx-auto w-full max-w-md border-0 shadow-lg sm:border sm:shadow-xl">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold tracking-tight">
-            Welcome back
+            Welcome to सर्वेक्षण फारम
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             Enter your credentials to access the admin panel

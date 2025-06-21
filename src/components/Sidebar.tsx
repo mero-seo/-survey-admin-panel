@@ -3,14 +3,13 @@
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useState } from "react";
-import { ChevronLeft, LayoutDashboard, ListChecks, MonitorSmartphone, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { ChevronLeft, LayoutDashboard, ListChecks, MonitorSmartphone, LogOut } from "lucide-react";
 import { NavLink } from "./NavLink";
 
 const navLinks = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/surveys", label: "Surveys", icon: ListChecks },
   { href: "/admin/devices", label: "Devices", icon: MonitorSmartphone },
-  { href: "/admin/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export default function Sidebar() {
