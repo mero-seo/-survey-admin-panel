@@ -41,7 +41,7 @@ export default function Sidebar() {
       <div className="flex items-center gap-2 mb-8 justify-center">
         {/* Placeholder for logo image in the future */}
         <span className="font-bold text-xl tracking-tight">
-          {collapsed ? "S" : "Survey"}
+          { "सर्वेक्षण फारम"}
         </span>
       </div>
       <div className="flex-1">
