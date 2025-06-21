@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import toast from "react-hot-toast";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { apiClient } from "@/lib/api/client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -30,7 +30,7 @@ const formSchema = z.object({
   path: ["confirmPassword"],
 });
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,77 +71,101 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/50">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <CardTitle>Invalid Link</CardTitle>
-            <CardDescription>
-              The password reset link is invalid or has expired.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link href="/auth/forgot-password">Request a new link</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="w-full max-w-md text-center">
+        <CardHeader>
+          <CardTitle>Invalid Link</CardTitle>
+          <CardDescription>
+            The password reset link is invalid or has expired.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild>
+            <Link href="/auth/forgot-password">Request a new link</Link>
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Reset Your Password</CardTitle>
-          <CardDescription>
-            {isSuccess ? "You can now log in with your new password." : "Enter your new password below."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isSuccess ? (
-            <div className="text-center">
-              <Button asChild>
-                <Link href="/auth/login">Back to Login</Link>
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle>Reset Your Password</CardTitle>
+        <CardDescription>
+          {isSuccess ? "You can now log in with your new password." : "Enter your new password below."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isSuccess ? (
+          <div className="text-center">
+            <Button asChild>
+              <Link href="/auth/login">Back to Login</Link>
+            </Button>
+          </div>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm New Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? "Resetting..." : "Reset Password"}
               </Button>
-            </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>New Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm New Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" disabled={isSubmitting} className="w-full">
-                  {isSubmitting ? "Resetting..." : "Reset Password"}
-                </Button>
-              </form>
-            </Form>
-          )}
-        </CardContent>
-      </Card>
+            </form>
+          </Form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResetPasswordSkeleton() {
+  return (
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle>Reset Your Password</CardTitle>
+        <CardDescription>Loading...</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="h-10 bg-muted animate-pulse rounded"></div>
+          <div className="h-10 bg-muted animate-pulse rounded"></div>
+          <div className="h-10 bg-muted animate-pulse rounded"></div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-muted/50">
+      <Suspense fallback={<ResetPasswordSkeleton />}>
+        <ResetPasswordForm />
+      </Suspense>
     </div>
   );
 } 
