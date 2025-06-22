@@ -800,11 +800,15 @@ export default function SurveyPage() {
                         <SelectValue placeholder="All Time Shifts" />
                       </SelectTrigger>
                       <SelectContent>
-                        {timeShifts.map((shift) => (
-                          <SelectItem key={shift.value} value={shift.value}>
-                            {shift.label}
-                          </SelectItem>
-                        ))}
+                        {timeShifts
+                          .filter(
+                            (shift) => shift.value && shift.value.trim() !== ""
+                          )
+                          .map((shift) => (
+                            <SelectItem key={shift.value} value={shift.value}>
+                              {shift.label}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -822,11 +826,15 @@ export default function SurveyPage() {
                         <SelectValue placeholder="All Locations" />
                       </SelectTrigger>
                       <SelectContent>
-                        {locationOptions.map((location) => (
-                          <SelectItem key={location} value={location}>
-                            {location}
-                          </SelectItem>
-                        ))}
+                        {locationOptions
+                          .filter(
+                            (location) => location && location.trim() !== ""
+                          )
+                          .map((location) => (
+                            <SelectItem key={location} value={location}>
+                              {location}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -844,11 +852,16 @@ export default function SurveyPage() {
                         <SelectValue placeholder="All Devices" />
                       </SelectTrigger>
                       <SelectContent>
-                        {deviceNameOptions.map((deviceName) => (
-                          <SelectItem key={deviceName} value={deviceName}>
-                            {deviceName}
-                          </SelectItem>
-                        ))}
+                        {deviceNameOptions
+                          .filter(
+                            (deviceName) =>
+                              deviceName && deviceName.trim() !== ""
+                          )
+                          .map((deviceName) => (
+                            <SelectItem key={deviceName} value={deviceName}>
+                              {deviceName}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
