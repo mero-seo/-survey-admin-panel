@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
@@ -69,15 +69,6 @@ interface DeviceStats {
   offline: number;
 }
 
-function calcAverageRating(stats: SurveyStats | null) {
-  if (!stats) return null;
-  const { excellent, satisfactory, average, total } = stats;
-  if (!total) return null;
-  // EXCELLENT=3, SATISFACTORY=2, AVERAGE=1
-  const avg = (3 * excellent + 2 * satisfactory + 1 * average) / total;
-  return avg;
-}
-
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -112,7 +103,7 @@ export default function DashboardPage() {
     []
   );
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -208,7 +199,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, isSurveyDummy, isDeviceDummy, apiError.type, toast]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -218,7 +209,7 @@ export default function DashboardPage() {
     }
 
     fetchData();
-  }, [session, status, router]);
+  }, [session, status, router, fetchData]);
 
   const handleRetry = () => {
     setRetryCount((prev) => prev + 1);
@@ -261,8 +252,6 @@ export default function DashboardPage() {
     );
   }
 
-  const averageRating = calcAverageRating(stats);
-
   if (loading) {
     return (
       <div className="p-4 md:p-8">
@@ -271,8 +260,8 @@ export default function DashboardPage() {
           <Skeleton className="h-6 w-64" />
         </div>
         {/* Skeletons for Stat Cards */}
-        <div className="grid gap-4 md:grid-cols-5 mb-8">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid gap-4 md:grid-cols-4 mb-8">
+          {Array.from({ length: 4 }).map((_, i) => (
             <StatCardSkeleton key={i} />
           ))}
         </div>
@@ -322,14 +311,13 @@ export default function DashboardPage() {
         <h2 className="text-xl font-bold">Survey Stats</h2>
         <ConnectionStatus isConnected={!error} isDummyData={isSurveyDummy} />
       </div>
-      <div className="grid gap-4 md:grid-cols-5 mb-8">
+      <div className="grid gap-4 md:grid-cols-4 mb-8">
         <StatCard
           title="Total Surveys"
           value={stats?.total}
           icon={<BarChart3 className="text-blue-500" size={20} />}
           colors="from-blue-50 to-blue-100"
           textColor="text-blue-700"
-          mainValueClass="text-3xl"
         />
         <StatCard
           title="Excellent"
@@ -354,14 +342,6 @@ export default function DashboardPage() {
           icon={<ThumbsDown className="text-red-500" size={20} />}
           colors="from-red-50 to-red-100"
           textColor="text-red-700"
-        />
-        <StatCard
-          title="Avg. Rating"
-          value={averageRating?.toFixed(2)}
-          icon={<Star className="text-indigo-500" size={20} />}
-          colors="from-indigo-50 to-indigo-100"
-          textColor="text-indigo-700"
-          mainValueClass="text-3xl"
         />
       </div>
 

@@ -18,7 +18,6 @@ export function ConnectionStatus({
     return (
       <div className={cn("flex items-center gap-2 text-green-600", className)}>
         <CheckCircle className="h-4 w-4" />
-        <span className="text-sm font-medium">Live Data</span>
       </div>
     );
   }

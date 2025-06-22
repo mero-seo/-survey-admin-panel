@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Loader2, Eye, EyeOff } from "lucide-react";
-import Link from "next/link";
 import toast from "react-hot-toast";
 import Image from "next/image";
 
@@ -24,6 +23,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "authenticated") {
@@ -34,6 +34,7 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
     try {
       const result = await signIn("credentials", {
@@ -46,11 +47,15 @@ export default function LoginPage() {
         toast.success("Logged in successfully!");
         router.push("/admin/dashboard");
       } else {
-        toast.error(result?.error || "Invalid credentials");
+        const errorMessage = result?.error || "Invalid credentials";
+        setError(errorMessage);
+        toast.error(errorMessage);
       }
     } catch (error: unknown) {
       console.error("Login error:", error);
-      toast.error("An unexpected error occurred during login.");
+      const errorMessage = "An unexpected error occurred during login.";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -101,12 +106,6 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-500"
-                >
-                  Forgot password?
-                </Link>
               </div>
               <div className="relative">
                 <Input
@@ -132,6 +131,12 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            {error && (
+              <div className="text-red-500 text-sm font-medium text-center bg-red-100 p-2 rounded-md">
+                {error}
+              </div>
+            )}
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (

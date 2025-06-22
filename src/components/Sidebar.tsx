@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useState } from "react";
-import { ChevronLeft, LayoutDashboard, ListChecks, MonitorSmartphone, LogOut } from "lucide-react";
+import {
+  ChevronLeft,
+  LayoutDashboard,
+  ListChecks,
+  MonitorSmartphone,
+  LogOut,
+} from "lucide-react";
 import { NavLink } from "./NavLink";
 
 const navLinks = [
@@ -30,7 +36,9 @@ export default function Sidebar() {
       {/* Collapse/Expand button always visible at the edge */}
       <button
         onClick={() => setCollapsed((prev) => !prev)}
-        className={`absolute -right-3 top-4 z-10 p-1 rounded-full bg-white border shadow transition-all duration-200 ${collapsed ? "" : "rotate-180"}`}
+        className={`absolute -right-3 top-4 z-10 p-1 rounded-full bg-white border shadow transition-all duration-200 ${
+          collapsed ? "" : "rotate-180"
+        }`}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         style={{ width: 28, height: 28 }}
       >
@@ -40,7 +48,7 @@ export default function Sidebar() {
       <div className="flex items-center gap-2 mb-8 justify-center">
         {/* Placeholder for logo image in the future */}
         <span className="font-bold text-xl tracking-tight">
-          { "सर्वेक्षण फारम"}
+          {"सर्वेक्षण फारम"}
         </span>
       </div>
       <div className="flex-1">
@@ -58,7 +66,7 @@ export default function Sidebar() {
       </div>
       <button
         onClick={handleLogout}
-        className={`mt-4 px-3 py-2 rounded bg-red-500 text-white hover:bg-red-600 font-medium transition-all duration-200 flex items-center gap-3 ${
+        className={`mt-4 px-3 py-2 rounded bg-red-500 text-white hover:bg-red-600 font-medium transition-all duration-200 flex items-center gap-3 cursor-pointer ${
           collapsed ? "w-10 mx-auto justify-center" : "w-full"
         }`}
         title="Logout"
@@ -68,4 +76,4 @@ export default function Sidebar() {
       </button>
     </aside>
   );
-} 
+}

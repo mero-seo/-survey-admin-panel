@@ -3,19 +3,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
 import { useSession } from "next-auth/react";
 import { Calendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
@@ -99,25 +86,29 @@ const timeShifts = [
   },
 ];
 
-const dummyAnalytics = [
-  { type: "Excellent", value: 12 },
-  { type: "Satisfactory", value: 6 },
-  { type: "Average", value: 2 },
+const quickSelectOptions = [
+  { label: "Today", value: "today" },
+  { label: "This Week", value: "week" },
+  { label: "This Month", value: "month" },
+  { label: "Last 7 Days", value: "last7" },
 ];
 
-type Breakdown = {
-  date: string;
-  total: number;
-  excellent: number;
-  satisfactory: number;
-  average: number;
+// Utility function to convert UTC time to Nepal time
+const convertToNepalTime = (utcDate: Date): Date => {
+  // Nepal is UTC+5:45
+  return new Date(utcDate.getTime() + (5 * 60 + 45) * 60 * 1000);
 };
-type LocationBreakdown = {
-  location: string;
-  total: number;
-  excellent: number;
-  satisfactory: number;
-  average: number;
+
+// Utility function to format Nepal time
+const formatNepalTime = (dateString: string): string => {
+  const utcDate = new Date(dateString);
+  const nepalDate = convertToNepalTime(utcDate);
+  return nepalDate.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kathmandu",
+  });
 };
 
 export default function SurveyPage() {
@@ -148,7 +139,6 @@ export default function SurveyPage() {
 
   // Component state
   const [surveys, setSurveys] = useState<Survey[]>([]);
-  const [isDummy, setIsDummy] = useState(true);
   const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({
     total: 0,
     totalPages: 1,
@@ -156,25 +146,24 @@ export default function SurveyPage() {
     hasPrev: false,
   });
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
-  const [deviceNameOptions, setDeviceNameOptions] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv");
   const [exportScope, setExportScope] = useState<"filtered" | "all">(
     "filtered"
   );
-  const [dailyBreakdown, setDailyBreakdown] = useState<Breakdown[]>([]);
-  const [locationBreakdown, setLocationBreakdown] = useState<
-    LocationBreakdown[]
-  >([]);
-  const [responseDistribution, setResponseDistribution] = useState<{
-    excellent: number;
-    satisfactory: number;
-    average: number;
-  }>({ excellent: 0, satisfactory: 0, average: 0 });
   const [surveyStats, setSurveyStats] = useState<SurveyStats | null>(null);
-  const pieColors = ["#22c55e", "#eab308", "#ef4444"];
+
+  const [activeFilters, setActiveFilters] = useState({
+    dateRange: {
+      from: startDateParam ? new Date(startDateParam) : undefined,
+      to: endDateParam ? new Date(endDateParam) : undefined,
+    },
+    timeShift: timeShift || "",
+    location: locationFilter || "",
+    answer: answerFilter || "",
+    deviceName: deviceNameFilter || "",
+  });
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isTableLoading, setIsTableLoading] = useState(false);
@@ -184,7 +173,7 @@ export default function SurveyPage() {
     (paramsToUpdate: Record<string, string | number | null | Date>) => {
       const newParams = new URLSearchParams(searchParams.toString());
       Object.entries(paramsToUpdate).forEach(([key, value]) => {
-        if (value === null || value === "") {
+        if (value === null || value === "" || value === undefined) {
           newParams.delete(key);
         } else if (value instanceof Date) {
           newParams.set(key, value.toISOString().split("T")[0]);
@@ -197,154 +186,97 @@ export default function SurveyPage() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    if (sessionStatus !== "authenticated" || !session?.user?.accessToken)
-      return;
+  const fetchData = useCallback(async () => {
+    // Only show full loading on initial load
+    if (surveys.length === 0) {
+      setIsDataLoading(true);
+    } else {
+      setIsTableLoading(true);
+      setIsStatsLoading(true);
+    }
 
-    const fetchData = async () => {
-      // Only show full loading on initial load
-      if (surveys.length === 0) {
-        setIsDataLoading(true);
-      } else {
-        setIsTableLoading(true);
-        setIsStatsLoading(true);
+    if (!session?.user?.accessToken) return;
+
+    try {
+      const params: Record<string, string | number> = {
+        page,
+        limit,
+        sortBy,
+        sortOrder,
+      };
+      if (locationFilter) params.location = locationFilter;
+      if (answerFilter) params.answer = answerFilter;
+      if (dateRange?.from) params.startDate = dateRange.from.toISOString();
+      if (dateRange?.to) {
+        const endOfDay = new Date(dateRange.to);
+        endOfDay.setHours(23, 59, 59, 999);
+        params.endDate = endOfDay.toISOString();
       }
+      if (timeShift) params.timeShift = timeShift;
+      if (deviceNameFilter) params.deviceName = deviceNameFilter;
 
-      try {
-        const params: Record<string, string | number> = {
-          page,
-          limit,
-          sortBy,
-          sortOrder,
-        };
-        if (locationFilter) params.location = locationFilter;
-        if (answerFilter) params.answer = answerFilter;
-        if (dateRange?.from) params.startDate = dateRange.from.toISOString();
-        if (dateRange?.to) {
-          const endOfDay = new Date(dateRange.to);
-          endOfDay.setHours(23, 59, 59, 999);
-          params.endDate = endOfDay.toISOString();
-        }
-        if (timeShift) params.timeShift = timeShift;
-        if (deviceNameFilter) params.deviceName = deviceNameFilter;
+      // Fetch surveys and stats in parallel
+      const [surveyRes, statsRes] = await Promise.all([
+        apiClient.get("/surveys", {
+          params,
+          headers: { Authorization: `Bearer ${session.user.accessToken}` },
+        }),
+        apiClient.get("/surveys/stats", {
+          params,
+          headers: { Authorization: `Bearer ${session.user.accessToken}` },
+        }),
+      ]);
 
-        // Fetch surveys and stats in parallel
-        const [surveyRes, statsRes] = await Promise.all([
-          apiClient.get("/surveys", {
-            params,
-            headers: { Authorization: `Bearer ${session.user.accessToken}` },
-          }),
-          apiClient.get("/surveys/stats", {
-            params,
-            headers: { Authorization: `Bearer ${session.user.accessToken}` },
-          }),
-        ]);
-
-        const surveys = surveyRes.data.data || [];
-        setSurveys(surveys);
-        setPaginationMeta(
-          surveyRes.data.meta?.pagination || {
-            total: 0,
-            totalPages: 1,
-            hasNext: false,
-            hasPrev: false,
-          }
-        );
-        setIsDummy(false);
-        const uniqueLocations = Array.from(
-          new Set(surveys.map((s: Survey) => s.location))
-        ) as string[];
-        setLocationOptions(uniqueLocations);
-        setSurveyStats(statsRes.data.data);
-
-        // Compute analytics from the filtered surveys returned by backend
-        const dailyMap: Record<string, Breakdown> = {};
-        surveys.forEach((s: Survey) => {
-          const date = (s.timestamp || s.createdAt).slice(0, 10);
-          if (!dailyMap[date])
-            dailyMap[date] = {
-              date,
-              total: 0,
-              excellent: 0,
-              satisfactory: 0,
-              average: 0,
-            };
-          dailyMap[date].total++;
-          if (s.answer === "EXCELLENT" || s.answer === "Excellent")
-            dailyMap[date].excellent++;
-          else if (s.answer === "SATISFACTORY" || s.answer === "Satisfactory")
-            dailyMap[date].satisfactory++;
-          else if (s.answer === "AVERAGE" || s.answer === "Average")
-            dailyMap[date].average++;
-        });
-        setDailyBreakdown(Object.values(dailyMap));
-
-        const locMap: Record<string, LocationBreakdown> = {};
-        surveys.forEach((s: Survey) => {
-          const location = s.location || "Unknown";
-          if (!locMap[location])
-            locMap[location] = {
-              location,
-              total: 0,
-              excellent: 0,
-              satisfactory: 0,
-              average: 0,
-            };
-          locMap[location].total++;
-          if (s.answer === "EXCELLENT" || s.answer === "Excellent")
-            locMap[location].excellent++;
-          else if (s.answer === "SATISFACTORY" || s.answer === "Satisfactory")
-            locMap[location].satisfactory++;
-          else if (s.answer === "AVERAGE" || s.answer === "Average")
-            locMap[location].average++;
-        });
-        setLocationBreakdown(Object.values(locMap));
-
-        let excellent = 0,
-          satisfactory = 0,
-          average = 0;
-        surveys.forEach((s: Survey) => {
-          if (s.answer === "EXCELLENT" || s.answer === "Excellent") excellent++;
-          else if (s.answer === "SATISFACTORY" || s.answer === "Satisfactory")
-            satisfactory++;
-          else if (s.answer === "AVERAGE" || s.answer === "Average") average++;
-        });
-        setResponseDistribution({ excellent, satisfactory, average });
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        setSurveys([]);
-        setPaginationMeta({
+      const surveysData = surveyRes.data.data || [];
+      setSurveys(surveysData);
+      setPaginationMeta(
+        surveyRes.data.meta?.pagination || {
           total: 0,
           totalPages: 1,
           hasNext: false,
           hasPrev: false,
-        });
-        setIsDummy(true);
-        setLocationOptions([]);
-        setDailyBreakdown([]);
-        setLocationBreakdown([]);
-        setResponseDistribution({ excellent: 0, satisfactory: 0, average: 0 });
-        setSurveyStats(null);
-      } finally {
-        setIsDataLoading(false);
-        setIsTableLoading(false);
-        setIsStatsLoading(false);
-      }
-    };
-    fetchData();
+        }
+      );
+      const uniqueLocations = Array.from(
+        new Set(surveysData.map((s: Survey) => s.location))
+      ) as string[];
+      setLocationOptions(uniqueLocations);
+      setSurveyStats(statsRes.data.data);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+      setSurveys([]);
+      setPaginationMeta({
+        total: 0,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
+      });
+      setLocationOptions([]);
+      setSurveyStats(null);
+    } finally {
+      setIsDataLoading(false);
+      setIsTableLoading(false);
+      setIsStatsLoading(false);
+    }
   }, [
-    sessionStatus,
-    session,
-    page,
-    limit,
-    sortBy,
-    sortOrder,
-    locationFilter,
     answerFilter,
     dateRange,
-    timeShift,
     deviceNameFilter,
+    limit,
+    locationFilter,
+    page,
+    session,
+    sortBy,
+    sortOrder,
+    surveys.length,
+    timeShift,
   ]);
+
+  useEffect(() => {
+    if (sessionStatus === "authenticated") {
+      fetchData();
+    }
+  }, [sessionStatus, fetchData]);
 
   // Fetch filter options
   useEffect(() => {
@@ -360,46 +292,78 @@ export default function SurveyPage() {
           endOfDay.setHours(23, 59, 59, 999);
           params.endDate = endOfDay.toISOString();
         }
+        if (timeShift) params.timeShift = timeShift;
+        if (deviceNameFilter) params.deviceName = deviceNameFilter;
 
         const response = await apiClient.get("/surveys/filter-options", {
           params,
           headers: { Authorization: `Bearer ${session.user.accessToken}` },
         });
 
-        const { locations, deviceNames } = response.data.data;
+        const { locations } = response.data.data;
         setLocationOptions(locations || []);
-        setDeviceNameOptions(deviceNames || []);
       } catch (error) {
         console.error("Failed to fetch filter options:", error);
       }
     };
 
     fetchFilterOptions();
-  }, [sessionStatus, session, dateRange]);
+  }, [sessionStatus, session, dateRange, deviceNameFilter]);
 
-  // Debounced search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (searchQuery) {
-        updateSearchParams({ search: searchQuery, page: 1 });
-      } else {
-        updateSearchParams({ search: null, page: 1 });
-      }
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery, updateSearchParams]);
-
-  const handleExport = () => {
-    let url = `/api/v1/surveys/export?format=${exportFormat}`;
-    if (exportScope === "filtered") {
-      const filteredParams = new URLSearchParams(searchParams.toString());
-      filteredParams.delete("page");
-      filteredParams.delete("limit");
-      url += `&${filteredParams.toString()}`;
+  const handleExport = async () => {
+    if (!session?.user?.accessToken) {
+      console.error("Authentication token not found.");
+      return;
     }
-    window.open(url, "_blank");
+
     setExportModalOpen(false);
+
+    try {
+      const params = new URLSearchParams();
+      params.set("format", exportFormat);
+
+      if (exportScope === "filtered") {
+        const filteredParams = new URLSearchParams(searchParams.toString());
+        filteredParams.delete("page");
+        filteredParams.delete("limit");
+        filteredParams.forEach((value, key) => {
+          if (value) {
+            params.set(key, value);
+          }
+        });
+      }
+
+      const response = await apiClient.get("/surveys/export", {
+        params,
+        headers: {
+          Authorization: `Bearer ${session.user.accessToken}`,
+        },
+        responseType: "blob",
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+
+      let filename = `survey-export.${exportFormat}`;
+      const contentDisposition = response.headers["content-disposition"];
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+?)"/);
+        if (filenameMatch && filenameMatch.length > 1) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export failed", error);
+      // You can add a toast notification here to inform the user
+    }
   };
 
   const handleSort = (column: string) => {
@@ -409,26 +373,30 @@ export default function SurveyPage() {
   };
 
   const handlePageChange = (newPage: number) => {
-    updateSearchParams({ page: newPage });
+    updateSearchParams({ page: newPage === 1 ? null : newPage });
   };
 
   const handleLimitChange = (newLimit: number) => {
     updateSearchParams({ limit: newLimit, page: 1 });
   };
 
-  const handleFilterChange = (
-    key: "location" | "answer" | "timeShift" | "deviceName",
-    value: string
-  ) => {
-    updateSearchParams({ [key]: value, page: 1 });
+  const handleApplyFilters = () => {
+    updateSearchParams({
+      startDate: activeFilters.dateRange.from || null,
+      endDate: activeFilters.dateRange.to || null,
+      timeShift: activeFilters.timeShift,
+      location: activeFilters.location,
+      answer: activeFilters.answer,
+      deviceName: activeFilters.deviceName,
+      page: 1,
+    });
   };
 
   const handleDateRangeChange = (range: DateRange | undefined) => {
-    updateSearchParams({
-      startDate: range?.from || null,
-      endDate: range?.to || null,
-      page: 1,
-    });
+    setActiveFilters((prev) => ({
+      ...prev,
+      dateRange: { from: range?.from, to: range?.to },
+    }));
   };
 
   const clearFilter = useCallback(
@@ -461,15 +429,14 @@ export default function SurveyPage() {
     }
     if (deviceNameFilter)
       chips.push({ key: "deviceName", label: `Device: ${deviceNameFilter}` });
-    if (searchQuery)
-      chips.push({ key: "search", label: `Search: "${searchQuery}"` });
     return chips;
   };
 
-  const setQuickRange = (type: "today" | "week" | "month" | "last7") => {
+  const setQuickRange = (type: string) => {
     const now = new Date();
-    let from: Date;
-    const to = new Date(now);
+    let from: Date | undefined;
+    let to: Date | undefined = new Date(now);
+
     switch (type) {
       case "today":
         from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -488,12 +455,23 @@ export default function SurveyPage() {
         from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
         break;
       default:
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        from = undefined;
+        to = undefined;
     }
-    handleDateRangeChange({ from, to });
+    setActiveFilters((prev) => ({
+      ...prev,
+      dateRange: { from, to },
+    }));
   };
 
   const resetFilters = () => {
+    setActiveFilters({
+      dateRange: { from: undefined, to: undefined },
+      timeShift: "",
+      location: "",
+      answer: "",
+      deviceName: "",
+    });
     updateSearchParams({
       startDate: null,
       endDate: null,
@@ -501,10 +479,8 @@ export default function SurveyPage() {
       answer: null,
       timeShift: null,
       deviceName: null,
-      search: null,
       page: 1,
     });
-    setSearchQuery("");
   };
 
   const columns: ColumnDef<Survey>[] = [
@@ -517,7 +493,19 @@ export default function SurveyPage() {
     {
       id: "timestamp",
       header: "Date",
-      cell: (survey) => (survey.timestamp ? survey.timestamp.slice(0, 10) : ""),
+      cell: (survey) => {
+        if (survey.timestamp) {
+          const utcDate = new Date(survey.timestamp);
+          const nepalDate = convertToNepalTime(utcDate);
+          return nepalDate.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            timeZone: "Asia/Kathmandu",
+          });
+        }
+        return "";
+      },
       enableSorting: true,
     },
     {
@@ -537,15 +525,9 @@ export default function SurveyPage() {
       header: "Time",
       cell: (survey) =>
         survey.timestamp
-          ? new Date(survey.timestamp).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
+          ? formatNepalTime(survey.timestamp)
           : survey.createdAt
-          ? new Date(survey.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
+          ? formatNepalTime(survey.createdAt)
           : "",
     },
     {
@@ -607,15 +589,6 @@ export default function SurveyPage() {
     <div className="p-4 md:p-8">
       <div className="flex items-center gap-2 mb-2">
         <h2 className="text-xl font-bold">Survey Management</h2>
-        <span
-          className={`px-2 py-1 rounded text-xs font-semibold ${
-            isDummy
-              ? "bg-yellow-100 text-yellow-700"
-              : "bg-blue-100 text-blue-700"
-          }`}
-        >
-          {isDummy ? "Dummy Data" : "Live from API"}
-        </span>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
@@ -655,225 +628,173 @@ export default function SurveyPage() {
         )}
       </div>
 
-      <div
-        className={cn(
-          "sticky top-0 z-10 bg-white border-b border-muted/30 mb-2",
-          !filtersOpen && "shadow-sm"
-        )}
-        style={{ transition: "box-shadow 0.2s" }}
-      >
-        <div className="flex items-center justify-between px-2 py-2">
-          <span className="font-semibold text-base">Filters</span>
-          <div className="flex items-center gap-2">
-            {!filtersOpen && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="md:hidden"
-                onClick={() => setFiltersOpen(true)}
-              >
-                Show Filters
-              </Button>
-            )}
+      {/* Filters Section */}
+      <div className="bg-card rounded-lg border mb-6">
+        <div
+          className="flex items-center justify-between p-4 cursor-pointer"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <h2 className="text-lg font-semibold">Filters</h2>
+          <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              size="icon"
-              onClick={() => setFiltersOpen((v) => !v)}
-              aria-label="Toggle filters"
-            >
-              <ChevronDownIcon
-                className={cn(
-                  "transition-transform",
-                  !filtersOpen && "rotate-180"
-                )}
-              />
-            </Button>
-            <Button
-              variant="outline"
               size="sm"
-              onClick={resetFilters}
-              className="hidden md:inline-flex"
+              onClick={(e) => {
+                e.stopPropagation();
+                resetFilters();
+              }}
             >
               Reset Filters
             </Button>
+            <ChevronDownIcon
+              className={cn(
+                "w-5 h-5 text-muted-foreground transition-transform duration-300",
+                filtersOpen && "rotate-180"
+              )}
+            />
           </div>
         </div>
-        <AnimatePresence initial={false}>
+        <AnimatePresence>
           {filtersOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
               className="overflow-hidden"
             >
-              <div className="flex flex-col md:flex-row gap-6 px-2 pb-4">
-                <div className="flex flex-col gap-2">
-                  <span className="text-xs font-medium text-muted-foreground px-1">
-                    Quick Select
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => setQuickRange("today")}
-                  >
-                    Today
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => setQuickRange("week")}
-                  >
-                    This Week
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => setQuickRange("month")}
-                  >
-                    This Month
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => setQuickRange("last7")}
-                  >
-                    Last 7 Days
-                  </Button>
-                </div>
-
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
-                      Search
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Search surveys..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-3 py-1.5 border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                    />
+              <div className="p-4 border-t">
+                <div className="flex flex-wrap items-end gap-4">
+                  {/* Quick Select */}
+                  <div className="flex-grow min-w-[150px]">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      Quick Select
+                    </label>
+                    <Select onValueChange={setQuickRange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a range..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {quickSelectOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
+
+                  {/* Date Range Picker */}
+                  <div className="flex-grow min-w-[200px]">
+                    <label
+                      htmlFor="date-range"
+                      className="block text-sm font-medium text-muted-foreground mb-1"
+                    >
                       Date range
-                    </span>
+                    </label>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
+                          id="date-range"
                           variant="outline"
                           className="w-full justify-start text-left font-normal"
                         >
-                          {dateRange?.from
-                            ? dateRange.to
-                              ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to.toLocaleDateString()}`
-                              : dateRange.from.toLocaleDateString()
-                            : "Pick a date range"}
+                          <span>
+                            {activeFilters.dateRange?.from ? (
+                              activeFilters.dateRange.to ? (
+                                <>
+                                  {activeFilters.dateRange.from.toLocaleDateString()}{" "}
+                                  -{" "}
+                                  {activeFilters.dateRange.to.toLocaleDateString()}
+                                </>
+                              ) : (
+                                activeFilters.dateRange.from.toLocaleDateString()
+                              )
+                            ) : (
+                              "Pick a date range"
+                            )}
+                          </span>
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" className="w-auto p-0">
+                      <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="range"
-                          selected={dateRange}
+                          selected={activeFilters.dateRange}
                           onSelect={handleDateRangeChange}
-                          numberOfMonths={2}
+                          initialFocus
                         />
                       </PopoverContent>
                     </Popover>
                   </div>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
+                  {/* Time Shift */}
+                  <div className="flex-grow min-w-[150px]">
+                    <label
+                      htmlFor="time-shift"
+                      className="block text-sm font-medium text-muted-foreground mb-1"
+                    >
                       Time Shift
-                    </span>
+                    </label>
                     <Select
-                      value={timeShift}
-                      onValueChange={(val) =>
-                        handleFilterChange("timeShift", val)
+                      value={activeFilters.timeShift}
+                      onValueChange={(value) =>
+                        setActiveFilters((p) => ({ ...p, timeShift: value }))
                       }
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id="time-shift">
                         <SelectValue placeholder="All Time Shifts" />
                       </SelectTrigger>
                       <SelectContent>
-                        {timeShifts
-                          .filter(
-                            (shift) => shift.value && shift.value.trim() !== ""
-                          )
-                          .map((shift) => (
-                            <SelectItem key={shift.value} value={shift.value}>
-                              {shift.label}
-                            </SelectItem>
-                          ))}
+                        {timeShifts.map((shift) => (
+                          <SelectItem key={shift.value} value={shift.value}>
+                            {shift.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
+
+                  {/* Location */}
+                  <div className="flex-grow min-w-[150px]">
+                    <label
+                      htmlFor="location"
+                      className="block text-sm font-medium text-muted-foreground mb-1"
+                    >
                       Location
-                    </span>
+                    </label>
                     <Select
-                      value={locationFilter}
-                      onValueChange={(val) =>
-                        handleFilterChange("location", val)
+                      value={activeFilters.location}
+                      onValueChange={(value) =>
+                        setActiveFilters((p) => ({ ...p, location: value }))
                       }
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id="location">
                         <SelectValue placeholder="All Locations" />
                       </SelectTrigger>
                       <SelectContent>
-                        {locationOptions
-                          .filter(
-                            (location) => location && location.trim() !== ""
-                          )
-                          .map((location) => (
-                            <SelectItem key={location} value={location}>
-                              {location}
-                            </SelectItem>
-                          ))}
+                        {locationOptions.map((loc) => (
+                          <SelectItem key={loc} value={loc}>
+                            {loc}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
-                      Device
-                    </span>
+
+                  {/* Rating */}
+                  <div className="flex-grow min-w-[150px]">
+                    <label
+                      htmlFor="rating"
+                      className="block text-sm font-medium text-muted-foreground mb-1"
+                    >
+                      Rating
+                    </label>
                     <Select
-                      value={deviceNameFilter}
-                      onValueChange={(val) =>
-                        handleFilterChange("deviceName", val)
+                      value={activeFilters.answer}
+                      onValueChange={(value) =>
+                        setActiveFilters((p) => ({ ...p, answer: value }))
                       }
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Devices" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {deviceNameOptions
-                          .filter(
-                            (deviceName) =>
-                              deviceName && deviceName.trim() !== ""
-                          )
-                          .map((deviceName) => (
-                            <SelectItem key={deviceName} value={deviceName}>
-                              {deviceName}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <span className="text-xs font-medium text-muted-foreground mb-1 block px-1">
-                      Rating
-                    </span>
-                    <Select
-                      value={answerFilter}
-                      onValueChange={(val) => handleFilterChange("answer", val)}
-                    >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id="rating">
                         <SelectValue placeholder="All Ratings" />
                       </SelectTrigger>
                       <SelectContent>
@@ -885,258 +806,120 @@ export default function SurveyPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {/* Action Buttons */}
+                  <div className="flex items-end gap-2">
+                    <Button onClick={handleApplyFilters}>Apply Filters</Button>
+                    <Button variant="ghost" onClick={resetFilters}>
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filter Actions */}
+                <div className="mt-6 pt-4 border-t">
+                  <span className="text-sm font-medium">Active Filters:</span>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {getFilterChips().length > 0 ? (
+                      getFilterChips().map((chip) => (
+                        <span
+                          key={chip.key}
+                          className="flex items-center gap-1 text-xs bg-muted text-muted-foreground rounded-full px-2 py-1"
+                        >
+                          {chip.label}
+                          <button
+                            onClick={() => clearFilter(chip.key)}
+                            className="rounded-full hover:bg-background"
+                          >
+                            <XIcon className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        No active filters.
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex flex-wrap gap-3 px-2 py-2 border-t border-muted/20 bg-white md:gap-2">
-          {getFilterChips().length === 0 ? (
-            <span className="text-xs text-muted-foreground">
-              No filters applied
-            </span>
-          ) : (
-            getFilterChips().map((chip) => (
-              <span
-                key={chip.key}
-                className="flex items-center gap-1 bg-primary/10 text-primary rounded-full px-3 py-1 text-xs font-medium shadow-sm mb-2 md:mb-0"
-              >
-                {chip.label}
-                <button
-                  className="ml-1 p-0.5 rounded-full hover:bg-primary/20 focus:bg-primary/20 focus:outline-none transition-colors"
-                  onClick={() => clearFilter(chip.key)}
-                  aria-label={`Remove ${chip.label}`}
-                  tabIndex={0}
+      </div>
+
+      <div className="bg-card p-4 rounded-lg border">
+        <div className="flex justify-end mb-4">
+          <Button onClick={() => setExportModalOpen(true)}>Export</Button>
+        </div>
+        {exportModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-xs">
+              <h2 className="font-semibold text-lg mb-4">Export Surveys</h2>
+              <div className="mb-3">
+                <label className="block text-sm font-medium mb-1">Format</label>
+                <select
+                  value={exportFormat}
+                  onChange={(e) =>
+                    setExportFormat(e.target.value as "csv" | "json")
+                  }
+                  className="w-full border rounded px-2 py-1"
                 >
-                  <XIcon className="size-3.5" />
-                </button>
-              </span>
-            ))
-          )}
-        </div>
-        <div className="md:hidden flex justify-end mb-2">
-          <Button variant="outline" size="sm" onClick={resetFilters}>
-            Reset Filters
-          </Button>
-        </div>
-      </div>
-      <div className="flex justify-end items-center mb-2">
-        <Button
-          onClick={() => setExportModalOpen(true)}
-          variant="outline"
-          className="ml-auto"
-        >
-          Export
-        </Button>
-      </div>
-      {exportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-xs">
-            <h2 className="font-semibold text-lg mb-4">Export Surveys</h2>
-            <div className="mb-3">
-              <label className="block text-sm font-medium mb-1">Format</label>
-              <select
-                value={exportFormat}
-                onChange={(e) =>
-                  setExportFormat(e.target.value as "csv" | "json")
-                }
-                className="w-full border rounded px-2 py-1"
-              >
-                <option value="csv">CSV</option>
-                <option value="json">JSON</option>
-              </select>
-            </div>
-            <div className="mb-3">
-              <label className="block text-sm font-medium mb-1">Scope</label>
-              <select
-                value={exportScope}
-                onChange={(e) =>
-                  setExportScope(e.target.value as "filtered" | "all")
-                }
-                className="w-full border rounded px-2 py-1"
-              >
-                <option value="filtered">Current Filters</option>
-                <option value="all">All Data</option>
-              </select>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setExportModalOpen(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="default"
-                className="flex-1"
-                onClick={handleExport}
-              >
-                Export
-              </Button>
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                </select>
+              </div>
+              <div className="mb-3">
+                <label className="block text-sm font-medium mb-1">Scope</label>
+                <select
+                  value={exportScope}
+                  onChange={(e) =>
+                    setExportScope(e.target.value as "filtered" | "all")
+                  }
+                  className="w-full border rounded px-2 py-1"
+                >
+                  <option value="filtered">Current Filters</option>
+                  <option value="all">All Data</option>
+                </select>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setExportModalOpen(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  className="flex-1"
+                  onClick={handleExport}
+                >
+                  Export
+                </Button>
+              </div>
             </div>
           </div>
+        )}
+        <div className="rounded-md border mb-6 px-5">
+          <DynamicTable
+            columns={columns}
+            data={surveys}
+            isLoading={isTableLoading}
+            onSort={handleSort}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            emptyStateMessage="No surveys found for the selected filters."
+          />
         </div>
-      )}
-      <div className="rounded-md border mb-6 px-5">
-        <DynamicTable
-          columns={columns}
-          data={surveys}
-          isLoading={isTableLoading}
-          onSort={handleSort}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
-          emptyStateMessage="No surveys found for the selected filters."
+        <PaginationControls
+          page={page}
+          limit={limit}
+          totalPages={paginationMeta.totalPages}
+          hasNext={paginationMeta.hasNext}
+          hasPrev={paginationMeta.hasPrev}
+          onPageChange={handlePageChange}
+          onLimitChange={handleLimitChange}
         />
-      </div>
-      <PaginationControls
-        page={page}
-        limit={limit}
-        totalPages={paginationMeta.totalPages}
-        hasNext={paginationMeta.hasNext}
-        hasPrev={paginationMeta.hasPrev}
-        onPageChange={handlePageChange}
-        onLimitChange={handleLimitChange}
-      />
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Survey Ratings Over Time</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="w-full h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={dailyBreakdown.length > 0 ? dailyBreakdown : []}
-                >
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar
-                    dataKey="excellent"
-                    fill="rgba(34,197,94,0.7)"
-                    name="Excellent"
-                  />
-                  <Bar
-                    dataKey="satisfactory"
-                    fill="rgba(234,179,8,0.7)"
-                    name="Satisfactory"
-                  />
-                  <Bar
-                    dataKey="average"
-                    fill="rgba(239,68,68,0.7)"
-                    name="Average"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Survey Ratings by Location</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="w-full h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={locationBreakdown.length > 0 ? locationBreakdown : []}
-                >
-                  <XAxis dataKey="location" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar
-                    dataKey="excellent"
-                    fill="rgba(34,197,94,0.7)"
-                    name="Excellent"
-                  />
-                  <Bar
-                    dataKey="satisfactory"
-                    fill="rgba(234,179,8,0.7)"
-                    name="Satisfactory"
-                  />
-                  <Bar
-                    dataKey="average"
-                    fill="rgba(239,68,68,0.7)"
-                    name="Average"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Survey Analytics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="w-full h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={
-                      responseDistribution.excellent +
-                        responseDistribution.satisfactory +
-                        responseDistribution.average >
-                      0
-                        ? [
-                            {
-                              type: "Excellent",
-                              value: responseDistribution.excellent,
-                            },
-                            {
-                              type: "Satisfactory",
-                              value: responseDistribution.satisfactory,
-                            },
-                            {
-                              type: "Average",
-                              value: responseDistribution.average,
-                            },
-                          ]
-                        : dummyAnalytics
-                    }
-                    dataKey="value"
-                    nameKey="type"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label
-                  >
-                    {(responseDistribution.excellent +
-                      responseDistribution.satisfactory +
-                      responseDistribution.average >
-                    0
-                      ? [
-                          {
-                            type: "Excellent",
-                            value: responseDistribution.excellent,
-                          },
-                          {
-                            type: "Satisfactory",
-                            value: responseDistribution.satisfactory,
-                          },
-                          {
-                            type: "Average",
-                            value: responseDistribution.average,
-                          },
-                        ]
-                      : dummyAnalytics
-                    ).map((entry, idx) => (
-                      <Cell
-                        key={`cell-${idx}`}
-                        fill={pieColors[idx % pieColors.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
