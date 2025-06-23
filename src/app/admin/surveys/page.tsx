@@ -268,7 +268,6 @@ export default function SurveyPage() {
     session,
     sortBy,
     sortOrder,
-    surveys.length,
     timeShift,
   ]);
 

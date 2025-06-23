@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +60,8 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
   const [data, setData] = useState<ShiftAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasFetchedRef = useRef(false);
+  const devicesFetchedRef = useRef(false);
 
   // Staging filter states for UI controls
   const [selectedDevice, setSelectedDevice] = useState<string>("all");
@@ -77,10 +79,10 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
   >([]);
   const [filtersOpen, setFiltersOpen] = useState(true);
 
-  // Fetch devices for filter
+  // Fetch devices for filter - only once
   useEffect(() => {
     const fetchDevices = async () => {
-      if (!session?.user?.accessToken) return;
+      if (!session?.user?.accessToken || devicesFetchedRef.current) return;
 
       try {
         const response = await apiClient.get("/devices", {
@@ -99,6 +101,7 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
             device.name.trim() !== ""
         );
         setDevices(validDevices);
+        devicesFetchedRef.current = true;
       } catch (err) {
         console.error("Failed to fetch devices:", err);
         setDevices([]);
@@ -106,9 +109,9 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
     };
 
     fetchDevices();
-  }, [session]);
+  }, [session?.user?.accessToken]);
 
-  const fetchAnalytics = useCallback(async () => {
+  const fetchAnalytics = async () => {
     if (!session?.user?.accessToken) return;
 
     setLoading(true);
@@ -137,22 +140,42 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
       });
 
       setData(response.data.data);
+      hasFetchedRef.current = true;
     } catch (err) {
-      const error = err as Error;
-      setError(`Failed to fetch analytics: ${error.message}`);
+      const error = err as { response?: { status?: number }; message?: string };
+      let errorMessage = "Failed to fetch analytics";
+
+      if (error.response?.status === 429) {
+        errorMessage = "Too many requests. Please wait before trying again.";
+      } else if (error.response?.status && error.response.status >= 500) {
+        errorMessage = "Server error. Please try again later.";
+      } else if (error.message) {
+        errorMessage = `Failed to fetch analytics: ${error.message}`;
+      }
+
+      setError(errorMessage);
       console.error("Analytics fetch error:", err);
     } finally {
       setLoading(false);
     }
-  }, [session, appliedSelectedDevice, appliedDateRange]);
+  };
 
+  // Initial fetch - only once
   useEffect(() => {
-    fetchAnalytics();
-  }, [fetchAnalytics]);
+    if (session?.user?.accessToken && !hasFetchedRef.current) {
+      fetchAnalytics();
+    }
+  }, [session?.user?.accessToken]);
 
   const handleApplyFilters = () => {
     setAppliedSelectedDevice(selectedDevice);
     setAppliedDateRange(dateRange);
+    // Reset the fetch flag and trigger a new fetch
+    hasFetchedRef.current = false;
+    // Use setTimeout to ensure state updates are processed
+    setTimeout(() => {
+      fetchAnalytics();
+    }, 0);
   };
 
   const clearFilters = () => {
@@ -160,6 +183,11 @@ export function ShiftAnalyticsChart({ className }: ShiftAnalyticsChartProps) {
     setDateRange(undefined);
     setAppliedSelectedDevice("all");
     setAppliedDateRange(undefined);
+    // Reset and refetch with cleared filters
+    hasFetchedRef.current = false;
+    setTimeout(() => {
+      fetchAnalytics();
+    }, 0);
   };
 
   const setQuickRange = (type: "today" | "week" | "month" | "last7") => {

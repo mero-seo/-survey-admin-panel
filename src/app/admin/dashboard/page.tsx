@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
@@ -28,7 +28,6 @@ import { StatCardSkeleton } from "@/components/StatCardSkeleton";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { ShiftAnalyticsChart } from "@/components/ShiftAnalyticsChart";
 import { ConnectionError } from "@/components/ErrorBoundary";
-import { useToast } from "@/lib/hooks/useToast";
 
 interface Survey {
   id: string;
@@ -75,7 +74,7 @@ export default function DashboardPage() {
   const [recentDevices, setRecentDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const { toast } = useToast();
+  const hasFetchedRef = useRef(false);
 
   const surveyColumns = useMemo<ColumnDef<Survey>[]>(
     () => [
@@ -99,8 +98,10 @@ export default function DashboardPage() {
     if (!session?.user?.accessToken) {
       return;
     }
+
     setLoading(true);
     setError(null);
+
     try {
       const headers = { Authorization: `Bearer ${session.user.accessToken}` };
       const [statsRes, deviceStatsRes, surveysRes, devicesRes] =
@@ -119,13 +120,14 @@ export default function DashboardPage() {
       setDeviceStats(deviceStatsRes.data.data);
       setRecentSurveys(surveysRes.data.data);
       setRecentDevices(devicesRes.data.data);
+      hasFetchedRef.current = true;
     } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
       setError(err);
-      toast.error("Failed to load dashboard data. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [session, toast]);
+  }, [session?.user?.accessToken]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -134,27 +136,73 @@ export default function DashboardPage() {
       return;
     }
 
-    fetchData();
+    // Only fetch if we haven't fetched before or if data is stale
+    if (!hasFetchedRef.current) {
+      fetchData();
+    }
   }, [session, status, router, fetchData]);
+
+  // Handle proper error messages for rate limiting
+  const getErrorMessage = (error: unknown) => {
+    if (error && typeof error === "object" && "response" in error) {
+      const axiosError = error as { response?: { status?: number } };
+      if (axiosError.response?.status === 429) {
+        return "Too many requests. Please wait a moment before trying again.";
+      }
+      if (axiosError.response?.status && axiosError.response.status >= 500) {
+        return "Server error. Please try again later.";
+      }
+      if (axiosError.response?.status === 401) {
+        return "Authentication failed. Please log in again.";
+      }
+    }
+    return "A connection error occurred while fetching dashboard data.";
+  };
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">
-            Welcome, {session?.user?.name ?? "Admin"}!
-          </p>
+      <div className="p-4 md:p-8">
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <span className="text-muted-foreground text-base">
+            Welcome, {session?.user?.name ?? "System Administrator"}!
+          </span>
         </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+
+        {/* Survey Stats Skeleton */}
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xl font-bold">Survey Stats</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-4 mb-8">
           <StatCardSkeleton />
           <StatCardSkeleton />
           <StatCardSkeleton />
           <StatCardSkeleton />
         </div>
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <TableSkeleton columns={3} />
-          <TableSkeleton columns={3} />
+
+        {/* Device Stats Skeleton */}
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xl font-bold">Device Stats</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+        </div>
+
+        {/* Tables Skeleton */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 mb-8">
+          <Card>
+            <CardContent className="p-2">
+              <TableSkeleton columns={3} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-2">
+              <TableSkeleton columns={3} />
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -163,146 +211,155 @@ export default function DashboardPage() {
   if (error) {
     return (
       <ConnectionError
-        message="A connection error occurred while fetching dashboard data."
-        onRetry={fetchData}
+        message={getErrorMessage(error)}
+        onRetry={() => {
+          hasFetchedRef.current = false;
+          fetchData();
+        }}
         showRetry
       />
     );
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-gray-500">
-          Welcome, {session?.user?.name ?? "System Administrator"}!
-        </p>
+    <div className="p-4 md:p-8">
+      <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <span className="text-muted-foreground text-base">
+          Welcome,{" "}
+          <span className="font-semibold text-primary">
+            {session?.user?.name ?? "System Administrator"}
+          </span>
+          !
+        </span>
       </div>
 
-      <div className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">Survey Stats</h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title="Total Surveys"
-            value={stats?.total}
-            icon={<BarChart3 className="text-blue-500" size={20} />}
-            colors="from-blue-50 to-blue-100"
-            textColor="text-blue-700"
-          />
-          <StatCard
-            title="Excellent"
-            value={stats?.excellent}
-            percentage={stats?.percentages?.excellent}
-            icon={<Star className="text-green-500" size={20} />}
-            colors="from-green-50 to-green-100"
-            textColor="text-green-700"
-          />
-          <StatCard
-            title="Satisfactory"
-            value={stats?.satisfactory}
-            percentage={stats?.percentages?.satisfactory}
-            icon={<ThumbsUp className="text-yellow-500" size={20} />}
-            colors="from-yellow-50 to-yellow-100"
-            textColor="text-yellow-700"
-          />
-          <StatCard
-            title="Average"
-            value={stats?.average}
-            percentage={stats?.percentages?.average}
-            icon={<ThumbsDown className="text-red-500" size={20} />}
-            colors="from-red-50 to-red-100"
-            textColor="text-red-700"
-          />
-        </div>
+      {/* Survey Stats Section */}
+      <div className="flex items-center gap-2 mb-2">
+        <h2 className="text-xl font-bold">Survey Stats</h2>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4 mb-8">
+        <StatCard
+          title="Total Surveys"
+          value={stats?.total}
+          icon={<BarChart3 className="text-blue-500" size={20} />}
+          colors="from-blue-50 to-blue-100"
+          textColor="text-blue-700"
+        />
+        <StatCard
+          title="Excellent"
+          value={stats?.excellent}
+          percentage={stats?.percentages?.excellent}
+          icon={<Star className="text-green-500" size={20} />}
+          colors="from-green-50 to-green-100"
+          textColor="text-green-700"
+        />
+        <StatCard
+          title="Satisfactory"
+          value={stats?.satisfactory}
+          percentage={stats?.percentages?.satisfactory}
+          icon={<ThumbsUp className="text-yellow-500" size={20} />}
+          colors="from-yellow-50 to-yellow-100"
+          textColor="text-yellow-700"
+        />
+        <StatCard
+          title="Average"
+          value={stats?.average}
+          percentage={stats?.percentages?.average}
+          icon={<ThumbsDown className="text-red-500" size={20} />}
+          colors="from-red-50 to-red-100"
+          textColor="text-red-700"
+        />
       </div>
 
-      <div className="mb-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <ShiftAnalyticsChart />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Device Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center text-gray-600">
-                  <PowerIcon className="mr-2 h-5 w-5 text-green-500" />
-                  Online Devices
-                </span>
-                <span className="font-bold">{deviceStats?.online ?? 0}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center text-gray-600">
-                  <PowerOffIcon className="mr-2 h-5 w-5 text-red-500" />
-                  Offline Devices
-                </span>
-                <span className="font-bold">{deviceStats?.offline ?? 0}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center text-gray-600">
-                  <SettingsIcon className="mr-2 h-5 w-5 text-yellow-500" />
-                  Maintenance
-                </span>
-                <span className="font-bold">
-                  {deviceStats?.maintenance ?? 0}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Link
-              href="/admin/devices"
-              className="flex items-center text-sm text-blue-600 hover:underline"
-            >
-              View All Devices <ChevronRight className="ml-1 h-4 w-4" />
-            </Link>
-          </CardFooter>
-        </Card>
+      {/* Device Stats Section */}
+      <div className="flex items-center gap-2 mb-2">
+        <h2 className="text-xl font-bold">Device Stats</h2>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <StatCard
+          title="Total Devices"
+          value={deviceStats?.total}
+          icon={<PowerIcon className="text-gray-500" size={20} />}
+          colors="from-gray-50 to-gray-100"
+          textColor="text-gray-700"
+        />
+        <StatCard
+          title="Active"
+          value={deviceStats?.active}
+          icon={<PowerIcon className="text-green-500" size={20} />}
+          colors="from-green-50 to-green-100"
+          textColor="text-green-700"
+        />
+        <StatCard
+          title="Inactive"
+          value={deviceStats?.inactive}
+          icon={<PowerOffIcon className="text-red-500" size={20} />}
+          colors="from-red-50 to-red-100"
+          textColor="text-red-700"
+        />
+        <StatCard
+          title="Maintenance"
+          value={deviceStats?.maintenance}
+          icon={<SettingsIcon className="text-yellow-500" size={20} />}
+          colors="from-yellow-50 to-yellow-100"
+          textColor="text-yellow-700"
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 mb-8">
+        {/* Recent Surveys Card */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Surveys</CardTitle>
           </CardHeader>
           <CardContent>
-            <DynamicTable
-              columns={surveyColumns}
-              data={recentSurveys}
-              emptyStateMessage="No recent surveys found."
-            />
+            <div className="rounded-md border mb-6 px-5">
+              <DynamicTable
+                columns={surveyColumns}
+                data={recentSurveys}
+                emptyStateMessage="No recent surveys"
+              />
+            </div>
           </CardContent>
-          <CardFooter className="flex justify-end">
+          <CardFooter>
             <Link
               href="/admin/surveys"
-              className="flex items-center text-sm text-blue-600 hover:underline"
+              className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end"
             >
-              View All Surveys <ChevronRight className="ml-1 h-4 w-4" />
+              View all <ChevronRight size={16} />
             </Link>
           </CardFooter>
         </Card>
 
+        {/* Recent Devices Card */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Devices</CardTitle>
           </CardHeader>
           <CardContent>
-            <DynamicTable
-              columns={deviceColumns}
-              data={recentDevices}
-              emptyStateMessage="No recent devices found."
-            />
+            <div className="rounded-md border mb-6 px-5">
+              <DynamicTable
+                columns={deviceColumns}
+                data={recentDevices}
+                emptyStateMessage="No recent devices"
+              />
+            </div>
           </CardContent>
-          <CardFooter className="flex justify-end">
+          <CardFooter>
             <Link
               href="/admin/devices"
-              className="flex items-center text-sm text-blue-600 hover:underline"
+              className="flex items-center gap-1 text-primary hover:underline text-sm font-medium w-full justify-end"
             >
-              View All Devices <ChevronRight className="ml-1 h-4 w-4" />
+              View all <ChevronRight size={16} />
             </Link>
           </CardFooter>
         </Card>
+      </div>
+
+      {/* Main Analytics Chart - Full Width at Bottom */}
+      <div className="mb-8">
+        <ShiftAnalyticsChart />
       </div>
     </div>
   );
